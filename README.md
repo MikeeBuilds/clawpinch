@@ -15,7 +15,7 @@
 ```
 
 [![npm](https://img.shields.io/npm/v/clawpinch)](https://www.npmjs.com/package/clawpinch)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
@@ -136,7 +136,7 @@ bash clawpinch.sh --fix
   │  ██║     ██║██║ ╚████║╚██████╗██║  ██║              │
   │  ╚═╝     ╚═╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝              │
   │                                                      │
-  │         Don't get pinched.  v1.0.0                   │
+  │         Don't get pinched.  v1.0.2                   │
   ╰──────────────────────────────────────────────────────╯
 
   [info]  OS detected: macos

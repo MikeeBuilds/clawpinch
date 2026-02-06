@@ -145,7 +145,7 @@ print_header() {
   printf "${_CLR_BOX}%s${_CLR_RST}\n" "$_BOX_V"
 
   # Tagline
-  local tagline="Don't get pinched.  v1.0.0"
+  local tagline="Don't get pinched.  v1.0.2"
   local tag_len=${#tagline}
   local tag_lpad=$(( (inner - tag_len) / 2 ))
   local tag_rpad=$(( inner - tag_lpad - tag_len ))

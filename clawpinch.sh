@@ -60,7 +60,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)    usage ;;
     -v|--version)
       node -e "console.log('clawpinch v' + require('$CLAWPINCH_DIR/package.json').version)" 2>/dev/null \
-        || echo "clawpinch v1.0.0"
+        || echo "clawpinch v1.0.2"
       exit 0 ;;
     *)
       log_error "Unknown option: $1"
