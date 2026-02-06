@@ -5,9 +5,10 @@
   "author": "MikeeBuilds",
   "license": "MIT",
   "bin": {
-    "clawpinch": "./clawpinch.sh"
+    "clawpinch": "./bin/clawpinch"
   },
   "files": [
+    "bin/",
     "clawpinch.sh",
     "scripts/",
     "references/",
