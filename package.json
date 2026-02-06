@@ -1,11 +1,11 @@
 {
   "name": "clawpinch",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenClaw Security Audit Toolkit - comprehensive configuration and deployment scanner",
   "author": "MikeeBuilds",
   "license": "MIT",
   "bin": {
-    "clawpinch": "./bin/clawpinch"
+    "clawpinch": "./bin/clawpinch.js"
   },
   "files": [
     "bin/",
