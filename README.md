@@ -23,11 +23,9 @@
 
 **ClawPinch** audits your OpenClaw deployment for misconfigurations, exposed
 secrets, malicious skills, network exposure, supply-chain risks, and known CVEs
--- then tells you exactly how to fix what it finds.
-
-Inspired by [ClawdStrike](https://clawdstrike.ai) by Cantina. ClawPinch goes
-deeper: more checks, structured JSON output, auto-fix suggestions, and a full
-threat model.
+-- then tells you exactly how to fix what it finds. 63 checks across 8
+categories, structured JSON output, auto-fix commands, AI-powered remediation,
+and a full threat model.
 
 ---
 
@@ -75,64 +73,105 @@ bash clawpinch.sh
 
 ---
 
-## Feature Comparison
+## Features
 
-| Feature                           | ClawPinch | ClawdStrike |
-|-----------------------------------|:---------:|:-----------:|
-| Config auditing                   |     Y     |      Y      |
-| Secrets scanning                  |     Y     |      Y      |
-| Network exposure checks           |     Y     |      Y      |
-| Skill trust/signature analysis    |     Y     |      --     |
-| Permission boundary auditing      |     Y     |      --     |
-| Cron job safety checks            |     Y     |      --     |
-| Known CVE detection               |     Y     |      Y      |
-| Supply-chain integrity checks     |     Y     |      --     |
-| Structured JSON output            |     Y     |      --     |
-| Auto-fix suggestions              |     Y     |      --     |
-| AI agent remediation              |     Y     |      --     |
-| Claude Code integration           |     Y     |      --     |
-| Threat model reference            |     Y     |      --     |
-| Total checks                      |   63      |     ~20     |
+- **63 checks** across 8 scanner categories
+- **Structured JSON output** for programmatic consumption
+- **Interactive review mode** with one-by-one fix workflow
+- **Auto-fix commands** for findings that support automated remediation
+- **AI agent remediation** -- pipe findings to Claude or any AI agent
+- **Self-installing** -- AI agents can discover, install, and operate ClawPinch without human help
+- **Secret redaction** -- all sensitive values masked in output
+- **NO_COLOR support** -- respects [no-color.org](https://no-color.org)
 
 ---
 
-## AI Agent Integration (v1.2)
+## For AI Agents
 
-ClawPinch is designed to be operated by AI agents without human intervention.
+ClawPinch is built to be operated by AI agents -- OpenClaw bots, Claude Code, or any LLM-based agent -- without human intervention.
 
-### Interactive Review: Ask AI
+### Quick Start for Agents
 
-In the interactive review mode, press `[a]` on any finding to copy a structured remediation prompt to your clipboard. Paste it into Claude Code or any AI assistant to get a fix — works even when no `auto_fix` command exists.
+```bash
+# Install and scan in one command (no human interaction)
+npx clawpinch --json --no-interactive
 
-### Export AI Remediation Skill
+# Scan and auto-remediate via Claude CLI
+npx clawpinch --remediate
+```
 
-Menu option `[4]` generates a `clawpinch-remediation-YYYY-MM-DD.md` task list designed for AI agents: numbered tasks by severity, acceptance criteria per task, and checkboxes for tracking.
+### OpenClaw Bot Integration
+
+Install ClawPinch as an OpenClaw skill:
+
+```bash
+npx skills add https://github.com/MikeeBuilds/clawpinch --skill clawpinch
+```
+
+Then run from your bot:
+
+```bash
+# Get structured findings as JSON
+openclaw skill run clawpinch -- --json --no-interactive
+
+# Parse output: each finding has id, severity, title, description,
+# evidence, remediation, and auto_fix fields
+```
+
+**Workflow for OpenClaw bots:**
+1. Run `clawpinch --json --no-interactive` to get findings
+2. Parse the JSON array -- each item follows the schema in `SKILL.md`
+3. Iterate findings by severity (`critical` > `warn` > `info`)
+4. For each finding: execute `auto_fix` if present, otherwise apply `remediation` manually
+5. Re-run the scan to verify fixes
+
+### Claude Code Integration
+
+When this repo (or any project with ClawPinch installed) is open in Claude Code:
+
+- `/clawpinch-scan` -- Run a security audit and get a summary
+- `/clawpinch-fix` -- Scan and remediate all findings automatically
 
 ### Automated Remediation Pipeline
 
 ```bash
-# Scan and pipe all findings directly to Claude for automated fixing
+# Scan then pipe all findings to Claude for automated fixing
 clawpinch --remediate
 ```
 
-This runs the scan, filters out passing checks, and pipes the findings to `claude -p` which fixes each issue autonomously. Set `CLAWPINCH_CLAUDE_BIN` to override the Claude CLI path.
+This runs the scan, filters out passing checks, and pipes findings to `claude -p` with tools enabled (`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`). Claude fixes each issue autonomously. Set `CLAWPINCH_CLAUDE_BIN` to override the Claude CLI path.
 
-### Claude Code Slash Commands
+### Any AI Agent
 
-When this repo is open in Claude Code:
-
-- `/clawpinch-scan` — Run a security audit and summarize results
-- `/clawpinch-fix` — Scan and remediate all findings
-
-### Self-Installation for AI Agents
-
-AI agents can discover ClawPinch via the `SKILL.md` frontmatter and install it with:
+ClawPinch works with any agent that can run shell commands and parse JSON:
 
 ```bash
-npx clawpinch --json --no-interactive
+# 1. Run scan
+FINDINGS=$(npx clawpinch --json --no-interactive)
+
+# 2. Get critical findings
+echo "$FINDINGS" | jq '[.[] | select(.severity == "critical")]'
+
+# 3. Get auto-fixable findings
+echo "$FINDINGS" | jq '[.[] | select(.auto_fix != null and .auto_fix != "")]'
+
+# 4. Execute a fix
+echo "$FINDINGS" | jq -r '.[0].auto_fix' | bash
 ```
 
-No human interaction required. See `SKILL.md` for the full machine-readable specification.
+**Export a task list for your agent:**
+
+Run ClawPinch interactively and choose menu option `[4] Export AI remediation skill`. This generates a `clawpinch-remediation-YYYY-MM-DD.md` with:
+- Numbered tasks ordered by severity
+- Description, evidence, and remediation per task
+- Auto-fix commands where available
+- Acceptance criteria and checkboxes
+
+**Machine-readable skill definition:** See `SKILL.md` for YAML frontmatter with name, description, version, and full capability documentation. Agents can parse this to decide when and how to invoke ClawPinch.
+
+### Interactive Mode: Ask AI
+
+In the interactive review mode, press `[a]` on any finding to copy a structured remediation prompt to your clipboard. Works on every finding -- including those with no `auto_fix`. Paste into any AI assistant to get a fix.
 
 ---
 
@@ -394,7 +433,6 @@ number in the category.
 
 ## Credits
 
-- Inspired by [ClawdStrike](https://clawdstrike.ai) by Cantina
 - CVE data sourced from NVD and OpenClaw security advisories
 - Built with bash, jq, and healthy paranoia
 
