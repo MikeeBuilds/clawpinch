@@ -159,7 +159,7 @@ check_typosquat_packages() {
 check_recent_packages() {
   log_info "CHK-SUP-004: Checking for suspiciously recent packages..."
   local found=0
-  local cutoff_days=7
+  local cutoff_days=2
   local now
   now="$(date +%s)"
 
@@ -328,53 +328,42 @@ check_unverified_github_skills() {
 check_extension_whitelist() {
   log_info "CHK-SUP-007: Checking extensions against plugins.allow whitelist..."
 
-  # Locate the plugins.allow file
-  local allow_file=""
+  # Read plugins.allow from openclaw.json config (it's an array inside the JSON)
   local config_file
-  config_file="$(get_openclaw_config 2>/dev/null)" || true
+  config_file="$(get_openclaw_config 2>/dev/null)" || config_file="$HOME/.openclaw/openclaw.json"
 
-  if [[ -n "$config_file" ]]; then
-    local config_dir
-    config_dir="$(dirname "$config_file")"
-    if [[ -f "$config_dir/plugins.allow" ]]; then
-      allow_file="$config_dir/plugins.allow"
-    fi
-  fi
-
-  # Check common locations
-  if [[ -z "$allow_file" ]]; then
-    for candidate in \
-      "$HOME/.openclaw/plugins.allow" \
-      "$HOME/.config/openclaw/plugins.allow" \
-      "$HOME/Library/Application Support/openclaw/plugins.allow"; do
-      if [[ -f "$candidate" ]]; then
-        allow_file="$candidate"
-        break
-      fi
-    done
-  fi
-
-  if [[ -z "$allow_file" ]]; then
+  if [[ ! -f "$config_file" ]]; then
     emit_finding \
       "CHK-SUP-007" \
       "warn" \
-      "No plugins.allow whitelist found" \
-      "Could not locate a plugins.allow file. Without a whitelist, any extension can load." \
-      "Searched: ~/.openclaw/plugins.allow, ~/.config/openclaw/plugins.allow" \
-      "Create a plugins.allow file listing only trusted extension identifiers."
+      "Cannot check plugin whitelist" \
+      "Could not locate openclaw.json to read plugins.allow." \
+      "Searched: $config_file" \
+      "Ensure openclaw.json exists with a plugins.allow array."
     return
   fi
 
-  log_info "Using whitelist: $allow_file"
+  local allow_json
+  allow_json="$(jq -r '.plugins.allow // empty' "$config_file" 2>/dev/null)"
+
+  if [[ -z "$allow_json" ]] || [[ "$allow_json" == "null" ]]; then
+    emit_finding \
+      "CHK-SUP-007" \
+      "warn" \
+      "No plugins.allow whitelist configured" \
+      "openclaw.json does not have a plugins.allow array. Without a whitelist, any extension can load." \
+      "config: $config_file" \
+      "Add a plugins.allow array to openclaw.json listing only trusted plugins."
+    return
+  fi
+
+  log_info "Reading plugins.allow from $config_file"
 
   # Read allowed plugins into an array
   local allowed=()
-  while IFS= read -r line; do
-    # Skip comments and blank lines
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "${line// /}" ]] && continue
-    allowed+=("$line")
-  done < "$allow_file"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && allowed+=("$name")
+  done < <(jq -r '.plugins.allow[]?' "$config_file" 2>/dev/null)
 
   local found=0
   for ext_dir in "$EXTENSIONS_DIR"/*/; do
@@ -397,8 +386,8 @@ check_extension_whitelist() {
         "critical" \
         "Extension not in plugins.allow: $ext_name" \
         "Extension '$ext_name' is installed but not listed in the plugins.allow whitelist. It may be unauthorized." \
-        "Extension: $ext_dir, Whitelist: $allow_file" \
-        "Add '$ext_name' to $allow_file if trusted, or remove the extension."
+        "Extension: $ext_dir" \
+        "Add '$ext_name' to plugins.allow in openclaw.json if trusted, or remove the extension."
     fi
   done
 

@@ -69,7 +69,7 @@ cfg_raw() {
 # ---------------------------------------------------------------------------
 # CHK-CFG-001: exec.ask not set to "always" -> CRITICAL
 # ---------------------------------------------------------------------------
-exec_ask="$(cfg '.exec.ask')"
+exec_ask="$(cfg '.tools.exec.ask')"
 if [[ "$exec_ask" != "always" ]]; then
     FINDINGS+=("$(emit_finding \
         "CHK-CFG-001" \
@@ -85,7 +85,7 @@ fi
 # ---------------------------------------------------------------------------
 # CHK-CFG-002: Any channel has groupPolicy="open" -> CRITICAL
 # ---------------------------------------------------------------------------
-open_group_channels="$(jq -r '[.channels[]? | select(.groupPolicy == "open") | .name // .id // "unnamed"] | join(", ")' "$CONFIG_PATH")"
+open_group_channels="$(jq -r '[.channels | to_entries[]? | select(.value.groupPolicy == "open") | .key] | join(", ")' "$CONFIG_PATH")"
 if [[ -n "$open_group_channels" ]]; then
     FINDINGS+=("$(emit_finding \
         "CHK-CFG-002" \
@@ -101,7 +101,7 @@ fi
 # ---------------------------------------------------------------------------
 # CHK-CFG-003: Any channel has dmPolicy="open" -> CRITICAL
 # ---------------------------------------------------------------------------
-open_dm_channels="$(jq -r '[.channels[]? | select(.dmPolicy == "open") | .name // .id // "unnamed"] | join(", ")' "$CONFIG_PATH")"
+open_dm_channels="$(jq -r '[.channels | to_entries[]? | select(.value.dmPolicy == "open") | .key] | join(", ")' "$CONFIG_PATH")"
 if [[ -n "$open_dm_channels" ]]; then
     FINDINGS+=("$(emit_finding \
         "CHK-CFG-003" \
@@ -133,7 +133,7 @@ fi
 # ---------------------------------------------------------------------------
 # CHK-CFG-005: exec.security not "full" -> WARN
 # ---------------------------------------------------------------------------
-exec_security="$(cfg '.exec.security')"
+exec_security="$(cfg '.tools.exec.security')"
 if [[ "$exec_security" != "full" ]]; then
     FINDINGS+=("$(emit_finding \
         "CHK-CFG-005" \
@@ -181,7 +181,7 @@ fi
 # ---------------------------------------------------------------------------
 # CHK-CFG-008: allowFrom contains "*" wildcard -> WARN
 # ---------------------------------------------------------------------------
-has_wildcard_allowfrom="$(jq -r 'if (.allowFrom // [] | map(select(. == "*")) | length) > 0 then "true" else "false" end' "$CONFIG_PATH")"
+has_wildcard_allowfrom="$(jq -r 'if [.channels | to_entries[]? | select(.value.allowFrom? // [] | map(select(. == "*")) | length > 0) | .key] | length > 0 then "true" else "false" end' "$CONFIG_PATH")"
 if [[ "$has_wildcard_allowfrom" == "true" ]]; then
     FINDINGS+=("$(emit_finding \
         "CHK-CFG-008" \
@@ -199,7 +199,7 @@ fi
 # ---------------------------------------------------------------------------
 native_skills_enabled="$(cfg '.commands.nativeSkills')"
 if [[ "$native_skills_enabled" == "true" ]]; then
-    has_open_channel="$(jq -r 'if ([.channels[]? | select(.groupPolicy == "open" or .dmPolicy == "open")] | length) > 0 then "true" else "false" end' "$CONFIG_PATH")"
+    has_open_channel="$(jq -r 'if [.channels | to_entries[]? | select(.value.groupPolicy == "open" or .value.dmPolicy == "open")] | length > 0 then "true" else "false" end' "$CONFIG_PATH")"
     if [[ "$has_open_channel" == "true" ]]; then
         FINDINGS+=("$(emit_finding \
             "CHK-CFG-009" \

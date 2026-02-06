@@ -43,8 +43,6 @@ SECRET_VALUE_PATTERNS = [
     ("OpenAI API key", re.compile(r"sk-proj-[A-Za-z0-9]{20,}")),
     ("OpenAI legacy key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
     ("Ethereum private key", re.compile(r"0x[a-fA-F0-9]{64}")),
-    ("Base58 key (Solana-like)", re.compile(r"[1-9A-HJ-NP-Za-km-z]{43,88}")),
-    ("Generic hex secret", re.compile(r"[a-fA-F0-9]{32,}")),
 ]
 
 ENV_VAR_REF = re.compile(r"^\$\{.+\}$|^\$[A-Z_][A-Z0-9_]*$")
@@ -72,13 +70,15 @@ def is_suspicious_value(value: str) -> bool:
         return False
     if is_env_ref(v):
         return False
+    # Skip values that look like URLs, file paths, semver versions, or prose
+    if v.startswith(("http://", "https://", "/", "./", "../")):
+        return False
+    if re.match(r"^\d+\.\d+\.\d+", v):  # semver
+        return False
+    if " " in v and len(v.split()) > 3:  # prose/sentences
+        return False
     for _, pat in SECRET_VALUE_PATTERNS:
         if pat.search(v):
-            return True
-    # Long random-looking strings
-    if len(v) >= 16 and re.search(r"[A-Za-z]", v) and re.search(r"[0-9]", v):
-        entropy_chars = set(v)
-        if len(entropy_chars) > len(v) * 0.4:
             return True
     return False
 
@@ -204,12 +204,24 @@ def check_clawtasks_private_keys(config_dir: str, findings: Findings):
         os.path.join(config_dir, ".clawtasks"),
         os.path.join(config_dir, "skills"),
     ]
+    # Directories to skip entirely during recursive walk
+    SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".cache", "dist", "build"}
+
     for scan_dir in dirs_to_scan:
         if not os.path.isdir(scan_dir):
             continue
         for root, _dirs, files in os.walk(scan_dir):
+            # Prune directories we should never scan
+            _dirs[:] = [d for d in _dirs if d not in SKIP_DIRS]
             for fname in files:
                 fpath = os.path.join(root, fname)
+                # Skip files that are unlikely to contain secrets
+                if fname.endswith((".d.ts", ".map", ".md", ".txt", ".lock", ".log",
+                                   ".png", ".jpg", ".gif", ".svg", ".woff", ".woff2",
+                                   ".ttf", ".eot", ".ico")):
+                    continue
+                if fname in ("package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
+                    continue
                 # Check for key file extensions
                 if fname.endswith((".pem", ".key", ".p12", ".pfx", ".jks")):
                     findings.add(
