@@ -486,12 +486,7 @@ review_findings() {
         if (( has_fix )); then
           printf '\n  Command: %b%s%b\n' "$_CLR_DIM" "$f_auto_fix" "$_CLR_RST"
           if _confirm '  Run this? [y/n]: '; then
-            # Validate command against allowlist before execution
-            if ! validate_command "$f_auto_fix"; then
-              printf '  %b✗ Command not in allowlist - execution blocked%b\n' "$_CLR_CRIT" "$_CLR_RST"
-            else
-              _run_fix "$f_auto_fix"
-            fi
+            _run_fix "$f_auto_fix"
           else
             printf '  Skipped.\n'
           fi

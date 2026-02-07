@@ -20,6 +20,37 @@ _DANGEROUS_PATTERNS = [
 _DANGEROUS_RE = re.compile('|'.join(_DANGEROUS_PATTERNS))
 
 
+def _check_dangerous_outside_single_quotes(cmd_string):
+    """Check for dangerous patterns outside single-quoted regions.
+
+    Single quotes in shell prevent all expansion, so $() inside single
+    quotes is literal text (e.g. sed 's/$(pwd)/path/g' is safe).
+    Returns True if a dangerous pattern is found outside single quotes.
+    """
+    in_single = False
+    i = 0
+    while i < len(cmd_string):
+        c = cmd_string[i]
+        if c == "'" and not in_single:
+            # Entering single-quoted region — skip to closing quote
+            in_single = True
+            i += 1
+            continue
+        elif c == "'" and in_single:
+            in_single = False
+            i += 1
+            continue
+
+        if not in_single:
+            # Check if a dangerous pattern starts at this position
+            remaining = cmd_string[i:]
+            if _DANGEROUS_RE.match(remaining):
+                return True
+
+        i += 1
+    return False
+
+
 def extract_commands(cmd_string):
     """Extract all base commands from a shell command string.
 
@@ -27,10 +58,8 @@ def extract_commands(cmd_string):
     constructs that could hide commands from validation.
     """
     # Reject strings containing command/process substitution or backticks
-    # Check outside of single-quoted regions (single quotes prevent expansion)
-    # Simple approach: check the raw string — even quoted $() is suspicious
-    # in an auto-fix context and should be rejected
-    if _DANGEROUS_RE.search(cmd_string):
+    # Only check outside single-quoted regions (single quotes prevent expansion)
+    if _check_dangerous_outside_single_quotes(cmd_string):
         raise ValueError(
             f"Command string contains dangerous shell construct: {cmd_string!r}"
         )
@@ -46,6 +75,12 @@ def extract_commands(cmd_string):
 
     while i < len(cmd_string):
         c = cmd_string[i]
+
+        # Handle backslash escape (only outside single quotes)
+        if c == "\\" and not in_single and i + 1 < len(cmd_string):
+            current += c + cmd_string[i + 1]
+            i += 2
+            continue
 
         # Track quote state
         if c == "'" and not in_double:

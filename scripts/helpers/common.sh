@@ -149,13 +149,19 @@ validate_command() {
   done
 
   if [[ -z "$security_file" ]]; then
-    log_error "validate_command: .auto-claude-security.json not found"
+    log_error "validate_command: .auto-claude-security.json not found (searched from $(pwd) to /). Create one with allowed command lists to enable auto-fix execution."
     return 1
   fi
 
   # Check if jq is available
   if ! has_cmd jq; then
     log_error "validate_command: jq is required but not installed"
+    return 1
+  fi
+
+  # Validate the security config is valid JSON first
+  if ! jq '.' "$security_file" >/dev/null 2>&1; then
+    log_error "validate_command: $security_file is not valid JSON"
     return 1
   fi
 
@@ -170,7 +176,7 @@ validate_command() {
   ' "$security_file" 2>/dev/null)"
 
   if [[ -z "$allowed_commands" ]]; then
-    log_error "validate_command: failed to parse security config"
+    log_error "validate_command: allowlist is empty in $security_file — no commands are permitted"
     return 1
   fi
 
