@@ -266,6 +266,25 @@ count_warn="$(echo "$SORTED_FINDINGS"     | jq '[.[] | select(.severity == "warn
 count_info="$(echo "$SORTED_FINDINGS"     | jq '[.[] | select(.severity == "info")] | length')"
 count_ok="$(echo "$SORTED_FINDINGS"       | jq '[.[] | select(.severity == "ok")] | length')"
 
+# ─── Check --fail-on enforcement ────────────────────────────────────────────
+
+if [[ -n "$FAIL_ON_CHECKS" ]]; then
+  # Convert comma-separated list to jq array format
+  fail_on_array="$(echo "$FAIL_ON_CHECKS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";""))')"
+
+  # Count findings matching any of the specified check IDs
+  count_fail_on="$(echo "$SORTED_FINDINGS" | jq --argjson ids "$fail_on_array" '
+    [.[] | select(.id as $id | $ids | any(. == $id))] | length
+  ')"
+
+  if [[ "$count_fail_on" -gt 0 ]]; then
+    if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
+      log_error "Found $count_fail_on finding(s) matching --fail-on check IDs: $FAIL_ON_CHECKS"
+    fi
+    exit 1
+  fi
+fi
+
 # ─── Output ──────────────────────────────────────────────────────────────────
 
 if [[ "$JSON_OUTPUT" -eq 1 ]]; then
