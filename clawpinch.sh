@@ -50,8 +50,10 @@ Options:
   -h, --help                    Show this help message
 
 Exit codes:
-  0   No critical findings
-  1   One or more critical findings detected
+  0   No findings above severity threshold (all checks passed)
+  1   Critical findings detected
+  2   Warning findings detected (no critical)
+  3   Scan error or incomplete
 EOF
   exit 0
 }
