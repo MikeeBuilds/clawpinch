@@ -23,6 +23,7 @@ trap '_cleanup_animation; exit 130' INT TERM
 
 DEEP=0
 JSON_OUTPUT=0
+SARIF_OUTPUT=0
 SHOW_FIX=0
 QUIET=0
 NO_INTERACTIVE=0
@@ -39,6 +40,7 @@ Usage: clawpinch [OPTIONS]
 Options:
   --deep            Run thorough / deep scans
   --json            Output findings as JSON array only
+  --sarif           Output findings in SARIF format
   --fix             Show auto-fix commands in report
   --quiet           Print summary line only
   --sequential      Run scanners sequentially (default is parallel)
@@ -60,6 +62,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --deep)       DEEP=1; shift ;;
     --json)       JSON_OUTPUT=1; shift ;;
+    --sarif)      SARIF_OUTPUT=1; shift ;;
     --fix)        SHOW_FIX=1; shift ;;
     --quiet)      QUIET=1; shift ;;
     --sequential) PARALLEL_SCANNERS=0; shift ;;
@@ -86,6 +89,7 @@ done
 export CLAWPINCH_DEEP="$DEEP"
 export CLAWPINCH_SHOW_FIX="$SHOW_FIX"
 export CLAWPINCH_CONFIG_DIR="$CONFIG_DIR"
+export SARIF_OUTPUT
 export QUIET
 
 # ─── Validate security config (early check for --remediate) ──────────────────
