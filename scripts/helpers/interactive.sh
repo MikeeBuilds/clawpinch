@@ -43,11 +43,11 @@ _confirm() {
 _run_fix() {
   local cmd="$1"
 
-  # Validate command against allowlist
-  if ! validate_command "$cmd"; then
-    printf '\n  %b✗ Command not in allowlist: %s%b\n' "$_CLR_CRIT" "$cmd" "$_CLR_RST"
-    return 1
-  fi
+  # NOTE: No separate validate_command() call here — safe_exec_command()
+  # performs its own comprehensive validation (blacklist + whitelist + per-command
+  # checks) which is stricter and handles redirections in safe patterns like
+  # "jq ... > tmp && mv tmp file.json". The allowlist-based validate_command()
+  # is used only in the AI remediation pipeline (clawpinch.sh).
 
   printf '\n  %b$%b %s\n' "$_CLR_DIM" "$_CLR_RST" "$cmd"
   if safe_exec_command "$cmd" 2>&1 | while IFS= read -r line; do printf '  %s\n' "$line"; done; then
@@ -570,13 +570,7 @@ auto_fix_all() {
     f_cmd="$(echo "$fixable" | jq -r ".[$i].auto_fix")"
     printf '  [%d/%d] %s ... ' $(( i + 1 )) "$fix_count" "$f_id"
 
-    # Validate command against allowlist
-    if ! validate_command "$f_cmd"; then
-      printf '%b✗ blocked (not in allowlist)%b\n' "$_CLR_CRIT" "$_CLR_RST"
-      failed=$(( failed + 1 ))
-      continue
-    fi
-
+    # safe_exec_command handles its own validation (whitelist + blacklist)
     if safe_exec_command "$f_cmd" >/dev/null 2>&1; then
       printf '%b✓ pass%b\n' "$_CLR_OK" "$_CLR_RST"
       passed=$(( passed + 1 ))

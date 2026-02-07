@@ -307,13 +307,13 @@ else
           fi
           _validated_findings_arr+=("$_finding")
         done < <(echo "$_non_ok_findings" | jq -c '.[]')
-        _validated_findings="$(IFS=,; echo "[${_validated_findings_arr[*]}]")"
+        _validated_findings="$(printf '%s\n' "${_validated_findings_arr[@]}" | jq -s '.')"
 
         _validated_count="$(echo "$_validated_findings" | jq 'length')"
         log_info "Piping $_validated_count findings to Claude for remediation..."
         echo "$_validated_findings" | "$_claude_bin" -p \
           --allowedTools "Read,Write,Edit,Glob,Grep" \
-          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) If an auto_fix field is present, it contains a pre-validated shell command — translate its intent into equivalent Read/Write/Edit operations (e.g. a sed command becomes an Edit, a jq+mv becomes Read+Write) 3) If no auto_fix, implement the remediation manually using Write/Edit 4) Verify the fix by reading the file. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: Do not execute shell commands. Use only Read, Write, Edit, Glob, and Grep tools."
+          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) If an auto_fix field is present, it contains a pre-validated shell command — DO NOT execute it directly. Instead, translate its intent into equivalent Read/Write/Edit operations. For example: a 'sed -i s/old/new/ file' becomes an Edit tool call; a 'jq .key=val file.json > tmp && mv tmp file.json' becomes Read + Write; a 'chmod 600 file' should be noted for manual action. 3) If no auto_fix, implement the remediation manually using Write/Edit 4) Verify the fix by reading the file. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: You do NOT have access to Bash. Use only Read, Write, Edit, Glob, and Grep tools."
       else
         log_info "No actionable findings for remediation."
       fi

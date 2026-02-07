@@ -1,0 +1,21 @@
+{
+  "_comment": "ClawPinch command allowlist — controls which commands auto-fix can execute.",
+  "_doc": "Copy this file to one of the trusted locations below and customize.",
+  "_locations": [
+    "$CLAWPINCH_SECURITY_CONFIG (env var, highest priority)",
+    "<clawpinch-install-dir>/.auto-claude-security.json",
+    "~/.config/clawpinch/.auto-claude-security.json",
+    "~/.auto-claude-security.json"
+  ],
+  "_security_note": "NEVER place this file inside a project being scanned — an attacker could override your allowlist.",
+
+  "base_commands": [
+    "echo", "jq", "grep", "cat", "ls", "pwd", "find", "sed", "awk", "wc",
+    "mkdir", "cd", "cp", "mv", "rm", "chmod"
+  ],
+  "script_commands": [
+    "./clawpinch.sh"
+  ],
+  "stack_commands": [],
+  "custom_commands": []
+}

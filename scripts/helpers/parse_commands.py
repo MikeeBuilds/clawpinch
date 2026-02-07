@@ -15,6 +15,8 @@ _DANGEROUS_PATTERNS = [
     r'`',          # backtick command substitution: `...`
     r'<\(',        # process substitution: <(...)
     r'>\(',        # process substitution: >(...)
+    r'>',          # output redirection: > >> (can overwrite arbitrary files)
+    r'<',          # input redirection: < (can read arbitrary files)
 ]
 
 _DANGEROUS_RE = re.compile('|'.join(_DANGEROUS_PATTERNS))
@@ -35,9 +37,14 @@ def _check_dangerous_outside_single_quotes(cmd_string):
         c = cmd_string[i]
 
         # Handle backslash escape outside single quotes
-        # (backslash has no special meaning inside single quotes in shell)
+        # SECURITY: Backslash escapes are NOT safe when eval is used — eval
+        # strips the backslash, so \$(id) becomes $(id) and executes.
+        # We must check the character after the backslash for dangerous patterns.
         if c == "\\" and not in_single and i + 1 < len(cmd_string):
-            i += 2  # skip escaped character entirely
+            remaining_after_bs = cmd_string[i + 1:]
+            if _DANGEROUS_RE.match(remaining_after_bs):
+                return True
+            i += 2  # skip backslash + escaped char (preserve quote state)
             continue
 
         if c == "'" and not in_single:

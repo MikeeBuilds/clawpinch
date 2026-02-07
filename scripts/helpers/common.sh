@@ -197,25 +197,46 @@ validate_command() {
     return 1
   fi
 
-  # Find security config file (walk up from cwd to root)
+  # Find security config file (trusted locations only)
+  # SECURITY: Do NOT search the project being scanned — an attacker could
+  # include a malicious .auto-claude-security.json in their repo to override
+  # the allowlist and bypass all command validation.
   local security_file=""
-  local dir
-  dir="$(pwd)"
-  while true; do
-    if [[ -f "$dir/.auto-claude-security.json" ]]; then
-      security_file="$dir/.auto-claude-security.json"
-      break
+
+  # 1. Explicit env var override (highest priority)
+  if [[ -n "${CLAWPINCH_SECURITY_CONFIG:-}" ]] && [[ -f "$CLAWPINCH_SECURITY_CONFIG" ]]; then
+    security_file="$CLAWPINCH_SECURITY_CONFIG"
+  fi
+
+  # 2. ClawPinch installation directory (next to clawpinch.sh)
+  if [[ -z "$security_file" ]]; then
+    local install_dir
+    install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    if [[ -f "$install_dir/.auto-claude-security.json" ]]; then
+      security_file="$install_dir/.auto-claude-security.json"
     fi
-    if [[ "$dir" == "/" ]]; then
-      break
+  fi
+
+  # 3. User config directory (~/.config/clawpinch/)
+  if [[ -z "$security_file" ]]; then
+    if [[ -f "$HOME/.config/clawpinch/.auto-claude-security.json" ]]; then
+      security_file="$HOME/.config/clawpinch/.auto-claude-security.json"
     fi
-    dir="$(dirname "$dir")"
-  done
+  fi
+
+  # 4. Home directory fallback
+  if [[ -z "$security_file" ]]; then
+    if [[ -f "$HOME/.auto-claude-security.json" ]]; then
+      security_file="$HOME/.auto-claude-security.json"
+    fi
+  fi
 
   if [[ -z "$security_file" ]]; then
-    log_error "validate_command: .auto-claude-security.json not found (searched from $(pwd) to /). Create one with allowed command lists to enable auto-fix execution."
+    log_error "validate_command: .auto-claude-security.json not found. Searched: \$CLAWPINCH_SECURITY_CONFIG, <install-dir>/, ~/.config/clawpinch/, ~/. See .auto-claude-security.json.example for setup."
     return 1
   fi
+
+  log_info "validate_command: using security config: $security_file"
 
   # Check if jq is available
   if ! has_cmd jq; then
@@ -240,7 +261,7 @@ validate_command() {
   ' "$security_file" 2>/dev/null)"
 
   if [[ -z "$allowed_commands" ]]; then
-    log_error "validate_command: allowlist is empty in $security_file — no commands are permitted"
+    log_warn "validate_command: allowlist is empty in $security_file — no commands are permitted"
     return 1
   fi
 
@@ -258,7 +279,7 @@ validate_command() {
   fi
 
   local base_commands_list
-  base_commands_list="$(python3 "$parse_script" "$cmd_string" 2>/dev/null)"
+  base_commands_list="$(python3 "$parse_script" "$cmd_string")"
   if [[ $? -ne 0 || -z "$base_commands_list" ]]; then
     log_error "validate_command: Python helper failed to parse command string."
     return 1
@@ -279,6 +300,17 @@ validate_command() {
     base_cmd="${base_cmd#\"}"
     base_cmd="${base_cmd%\"}"
     [[ -z "$base_cmd" ]] && continue
+
+    # Block interpreters with command execution flags (-c, -e)
+    # e.g., "bash -c 'rm -rf /'" — bash is in allowlist but -c allows arbitrary code
+    case "$base_cmd" in
+      bash|sh|zsh|python|python3|perl|ruby|node)
+        if [[ "$cmd_string" =~ [[:space:]]-[ce][[:space:]] ]] || [[ "$cmd_string" =~ [[:space:]]-[ce]$ ]]; then
+          log_error "validate_command: interpreter '$base_cmd' with -c or -e flag is not allowed"
+          return 1
+        fi
+        ;;
+    esac
 
     # Block redirection operators — these can write/overwrite arbitrary files
     case "$base_cmd" in
