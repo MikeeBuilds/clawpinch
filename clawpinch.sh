@@ -267,6 +267,7 @@ count_critical="$(echo "$ACTIVE_FINDINGS" | jq '[.[] | select(.severity == "crit
 count_warn="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "warn")] | length')"
 count_info="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "info")] | length')"
 count_ok="$(echo "$ACTIVE_FINDINGS"       | jq '[.[] | select(.severity == "ok")] | length')"
+count_suppressed="$(echo "$SUPPRESSED_FINDINGS" | jq 'length')"
 
 # ─── Output ──────────────────────────────────────────────────────────────────
 
@@ -300,7 +301,7 @@ else
   fi
 
   # Always print summary dashboard
-  print_summary "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed"
+  print_summary "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed" "$count_suppressed"
 
   # Launch interactive menu if TTY and not disabled
   if [[ "$QUIET" -eq 0 ]] && [[ "$NO_INTERACTIVE" -eq 0 ]] && [[ -t 0 ]]; then
