@@ -133,19 +133,19 @@ validate_command() {
     return 1
   fi
 
-  # Find security config file
+  # Find security config file (walk up from cwd to root)
   local security_file=""
-  local search_dirs=(
-    "$(pwd)"
-    "$(dirname "$(pwd)")"
-    "$(dirname "$(dirname "$(pwd)")")"
-  )
-
-  for dir in "${search_dirs[@]}"; do
+  local dir
+  dir="$(pwd)"
+  while true; do
     if [[ -f "$dir/.auto-claude-security.json" ]]; then
       security_file="$dir/.auto-claude-security.json"
       break
     fi
+    if [[ "$dir" == "/" ]]; then
+      break
+    fi
+    dir="$(dirname "$dir")"
   done
 
   if [[ -z "$security_file" ]]; then
@@ -181,17 +181,17 @@ validate_command() {
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local parse_script="$script_dir/parse_commands.py"
 
+  # Require Python parser — fail closed if unavailable (no insecure fallback)
+  if ! [[ -f "$parse_script" ]] || ! has_cmd python3; then
+    log_error "validate_command: python3 or parse_commands.py not available. Cannot securely validate command."
+    return 1
+  fi
+
   local base_commands_list
-  if [[ -f "$parse_script" ]] && has_cmd python3; then
-    # Use Python parser - it returns base commands directly
-    base_commands_list="$(python3 "$parse_script" "$cmd_string" 2>/dev/null)"
-    if [[ $? -ne 0 || -z "$base_commands_list" ]]; then
-      # Python failed, fall back to simple parsing
-      base_commands_list="$(echo "$cmd_string" | sed -e 's/[|]/\n/g' -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/;/\n/g' | awk '{print $1}')"
-    fi
-  else
-    # Fallback to simple sed-based splitting (may be overly restrictive with quoted pipes)
-    base_commands_list="$(echo "$cmd_string" | sed -e 's/[|]/\n/g' -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/;/\n/g' | awk '{print $1}')"
+  base_commands_list="$(python3 "$parse_script" "$cmd_string" 2>/dev/null)"
+  if [[ $? -ne 0 || -z "$base_commands_list" ]]; then
+    log_error "validate_command: Python helper failed to parse command string."
+    return 1
   fi
 
   # Check each base command
@@ -205,25 +205,19 @@ validate_command() {
     # Skip quoted strings (they're arguments, not commands)
     [[ "$base_cmd" =~ ^[\'\"] ]] && continue
 
-    # Skip paths starting with / or ./ or ~/ (they're file paths, not commands)
-    [[ "$base_cmd" =~ ^[/~\.] ]] && continue
+    # Block path-based commands (/bin/rm, ./malicious, ~/script) — prevents allowlist bypass
+    if [[ "$base_cmd" =~ ^[/~\.] ]]; then
+      log_error "validate_command: path-based command '$base_cmd' is not allowed (use bare command names)"
+      return 1
+    fi
 
     # Skip redirection operators
     case "$base_cmd" in
       '>'|'>>'|'<'|'2>'|'&>'|'2>&1') continue ;;
     esac
 
-    # Check if this command is in the allowlist
-    local found=0
-    while IFS= read -r allowed; do
-      if [[ "$base_cmd" == "$allowed" ]]; then
-        found=1
-        break
-      fi
-    done <<< "$allowed_commands"
-
-    # If any command is not in allowlist, reject the entire command string
-    if [[ $found -eq 0 ]]; then
+    # Check if this command is in the allowlist (exact match)
+    if ! grep -Fxq -- "$base_cmd" <<< "$allowed_commands"; then
       log_error "validate_command: '$base_cmd' is not in the allowlist"
       return 1
     fi

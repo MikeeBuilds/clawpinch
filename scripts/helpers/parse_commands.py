@@ -1,13 +1,43 @@
 #!/usr/bin/env python3
-"""Parse shell command string and extract base commands while respecting quotes."""
+"""Parse shell command string and extract base commands while respecting quotes.
+
+Security: rejects commands containing dangerous shell constructs that could
+hide malicious commands (command substitution, process substitution, backticks).
+"""
 import sys
 import shlex
+import re
+
+
+# Patterns that indicate hidden command execution — reject the entire string
+_DANGEROUS_PATTERNS = [
+    r'\$\(',       # command substitution: $(...)
+    r'`',          # backtick command substitution: `...`
+    r'<\(',        # process substitution: <(...)
+    r'>\(',        # process substitution: >(...)
+]
+
+_DANGEROUS_RE = re.compile('|'.join(_DANGEROUS_PATTERNS))
+
 
 def extract_commands(cmd_string):
-    """Extract all base commands from a shell command string."""
+    """Extract all base commands from a shell command string.
+
+    Raises ValueError if the command string contains dangerous shell
+    constructs that could hide commands from validation.
+    """
+    # Reject strings containing command/process substitution or backticks
+    # Check outside of single-quoted regions (single quotes prevent expansion)
+    # Simple approach: check the raw string — even quoted $() is suspicious
+    # in an auto-fix context and should be rejected
+    if _DANGEROUS_RE.search(cmd_string):
+        raise ValueError(
+            f"Command string contains dangerous shell construct: {cmd_string!r}"
+        )
+
     commands = []
 
-    # Split by command separators: |, &&, ||, ;
+    # Split by command separators: |, &&, ||, ;, &
     # Use a simple state machine to handle quotes
     in_single = False
     in_double = False
@@ -35,6 +65,16 @@ def extract_commands(cmd_string):
                 if current.strip():
                     commands.append(current.strip())
                 current = ""
+            elif c == '&':
+                # Background operator — treat as separator
+                if current.strip():
+                    commands.append(current.strip())
+                current = ""
+            elif c == '\n':
+                # Newline — treat as separator
+                if current.strip():
+                    commands.append(current.strip())
+                current = ""
             else:
                 current += c
         else:
@@ -54,10 +94,8 @@ def extract_commands(cmd_string):
             if tokens:
                 base_commands.append(tokens[0])
         except ValueError:
-            # If shlex fails, fall back to simple split
-            parts = cmd.strip().split()
-            if parts:
-                base_commands.append(parts[0])
+            # If shlex fails, reject — don't fall back to insecure parsing
+            raise ValueError(f"Failed to parse command segment: {cmd!r}")
 
     return base_commands
 
@@ -67,6 +105,11 @@ if __name__ == "__main__":
     else:
         cmd = sys.stdin.read().strip()
 
-    commands = extract_commands(cmd)
+    try:
+        commands = extract_commands(cmd)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
     for c in commands:
         print(c)
