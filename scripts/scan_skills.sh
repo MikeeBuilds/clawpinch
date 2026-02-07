@@ -55,7 +55,11 @@ SUSPICIOUS_DOMAINS=(
 
 # Load extra patterns from malicious-patterns.json if it exists
 if [[ -f "$PATTERNS_FILE" ]] && command -v python3 &>/dev/null; then
-  _loaded="$(python3 -c "
+  # Verify JSON integrity before using
+  if ! verify_json_integrity "$PATTERNS_FILE"; then
+    log_error "Integrity verification failed for malicious-patterns.json -- using built-in patterns only"
+  else
+    _loaded="$(python3 -c "
 import json
 try:
     d = json.load(open('$PATTERNS_FILE'))
@@ -70,14 +74,15 @@ except Exception:
     pass
 " 2>/dev/null || true)"
 
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    case "$line" in
-      PKG:*) KNOWN_MALICIOUS_NAMES+=("${line#PKG:}") ;;
-      DOM:*) SUSPICIOUS_DOMAINS+=("${line#DOM:}") ;;
-    esac
-  done <<< "$_loaded"
-  unset _loaded
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      case "$line" in
+        PKG:*) KNOWN_MALICIOUS_NAMES+=("${line#PKG:}") ;;
+        DOM:*) SUSPICIOUS_DOMAINS+=("${line#DOM:}") ;;
+      esac
+    done <<< "$_loaded"
+    unset _loaded
+  fi
 fi
 
 # Load extraDirs from openclaw config if available
