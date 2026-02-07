@@ -79,6 +79,7 @@ bash clawpinch.sh
 - **Structured JSON output** for programmatic consumption
 - **Interactive review mode** with one-by-one fix workflow
 - **Auto-fix commands** for findings that support automated remediation
+- **Safe command execution** -- whitelist-based validation prevents command injection
 - **AI agent remediation** -- pipe findings to Claude or any AI agent
 - **Self-installing** -- AI agents can discover, install, and operate ClawPinch without human help
 - **Secret redaction** -- all sensitive values masked in output
@@ -380,6 +381,20 @@ The terminal UI features:
 
 ---
 
+## Security
+
+ClawPinch is a security audit tool, so it practices what it preaches:
+
+- **Safe command execution**: Auto-fix commands execute through `safe_exec_command()` with whitelist-based validation. Only specific command patterns (jq, chmod, mv, sed, cp, rm) are allowed. Dangerous patterns like command injection (`;`, `|`, `$()`, backticks), wildcards, and pipe-to-shell are blocked.
+- **Audit logging**: All command validation attempts logged to stderr (set `CLAWPINCH_AUDIT_LOG` for persistent logs)
+- **No eval() in production**: The codebase previously used `eval()` for auto-fix commands, which was replaced with a defense-in-depth whitelist approach
+- **Secret redaction**: All sensitive values masked before display
+- **Read-only scanners**: Scanners never modify the system; only explicit auto-fix actions execute commands
+
+For security considerations when adding new checks, see `scripts/helpers/safe_exec.sh` and `references/threat-model.md`.
+
+---
+
 ## Project Structure
 
 ```
@@ -390,6 +405,7 @@ clawpinch/
       common.sh           # Color system, NO_COLOR, logging, finding emitter
       report.sh           # Terminal UI rendering (banner, cards, dashboard)
       redact.sh           # Secret redaction utilities
+      safe_exec.sh        # Safe command execution (whitelist validation)
       interactive.sh      # Post-scan menu: review, auto-fix, AI remediation
     scan_config.sh        # Configuration scanner
     scan_secrets.py       # Secrets scanner (Python)
