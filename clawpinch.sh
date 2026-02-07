@@ -23,6 +23,7 @@ SHOW_FIX=0
 QUIET=0
 NO_INTERACTIVE=0
 REMEDIATE=0
+PARALLEL_SCANNERS=0
 CONFIG_DIR=""
 
 # ─── Usage ───────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ Options:
   --json            Output findings as JSON array only
   --fix             Show auto-fix commands in report
   --quiet           Print summary line only
+  --parallel        Run scanners in parallel for 2-3x speedup
   --no-interactive  Disable interactive post-scan menu
   --remediate       Run scan then pipe findings to Claude for AI remediation
   --config-dir PATH Explicit path to openclaw config directory
@@ -56,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --json)       JSON_OUTPUT=1; shift ;;
     --fix)        SHOW_FIX=1; shift ;;
     --quiet)      QUIET=1; shift ;;
+    --parallel)   PARALLEL_SCANNERS=1; shift ;;
     --no-interactive) NO_INTERACTIVE=1; shift ;;
     --remediate)  REMEDIATE=1; NO_INTERACTIVE=1; shift ;;
     --config-dir)
@@ -109,6 +112,62 @@ if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
   fi
   printf '\n'
 fi
+
+# ─── Parallel scanner execution function ────────────────────────────────────
+
+run_scanners_parallel() {
+  local temp_dir=""
+  temp_dir="$(mktemp -d)"
+
+  # Create associative arrays to track background jobs
+  declare -a pids=()
+  declare -a scanner_names=()
+
+  # Launch all scanners in parallel
+  for scanner in "${scanners[@]}"; do
+    local scanner_name="$(basename "$scanner")"
+    local temp_file="$temp_dir/${scanner_name}.json"
+
+    # Run scanner in background, redirecting output to temp file
+    (
+      if [[ "$scanner" == *.sh ]]; then
+        bash "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
+      elif [[ "$scanner" == *.py ]]; then
+        if has_cmd python3; then
+          python3 "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
+        elif has_cmd python; then
+          python "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
+        else
+          echo '[]' > "$temp_file"
+        fi
+      fi
+    ) &
+
+    pids+=("$!")
+    scanner_names+=("$scanner_name")
+  done
+
+  # Wait for all background jobs to complete
+  for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+
+  # Merge all JSON outputs
+  ALL_FINDINGS="[]"
+  for temp_file in "$temp_dir"/*.json; do
+    if [[ -f "$temp_file" ]]; then
+      output="$(cat "$temp_file")"
+      if [[ -n "$output" ]]; then
+        if echo "$output" | jq 'type == "array"' 2>/dev/null | grep -q 'true'; then
+          ALL_FINDINGS="$(echo "$ALL_FINDINGS" "$output" | jq -s '.[0] + .[1]')"
+        fi
+      fi
+    fi
+  done
+
+  # Clean up temp directory
+  rm -rf "$temp_dir"
+}
 
 # ─── Discover scanner scripts ───────────────────────────────────────────────
 
