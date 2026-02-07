@@ -87,58 +87,63 @@ if [[ -n "$CURRENT_VERSION" ]]; then
   if [[ ! -f "$KNOWN_CVES_FILE" ]]; then
     log_warn "known-cves.json not found at $KNOWN_CVES_FILE -- skipping CVE database checks"
   else
-    # CHK-CVE-001: CVE-2026-25253 -- 1-Click RCE
-    cve_001_fixed="2026.1.29"
-    if ! version_gte "$CURRENT_VERSION" "$cve_001_fixed"; then
-      add_finding \
-        "CHK-CVE-001" "critical" \
-        "Vulnerable to CVE-2026-25253: 1-Click RCE via auth token exfiltration" \
-        "Cross-site WebSocket hijacking. Control UI trusts gatewayUrl from query string, leaking gateway auth token. CVSS 8.8." \
-        "Installed: $CURRENT_VERSION, fixed in: $cve_001_fixed" \
-        "Upgrade OpenClaw to >= $cve_001_fixed: npm update -g openclaw"
+    # Verify JSON integrity before using
+    if ! verify_json_integrity "$KNOWN_CVES_FILE"; then  # known-cves.json
+      log_error "Integrity verification failed for known-cves.json -- skipping CVE database checks"
     else
-      add_finding \
-        "CHK-CVE-001" "ok" \
-        "Not vulnerable to CVE-2026-25253" \
-        "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-25253." \
-        "Installed: $CURRENT_VERSION >= $cve_001_fixed" \
-        ""
-    fi
+      # CHK-CVE-001: CVE-2026-25253 -- 1-Click RCE
+      cve_001_fixed="2026.1.29"
+      if ! version_gte "$CURRENT_VERSION" "$cve_001_fixed"; then
+        add_finding \
+          "CHK-CVE-001" "critical" \
+          "Vulnerable to CVE-2026-25253: 1-Click RCE via auth token exfiltration" \
+          "Cross-site WebSocket hijacking. Control UI trusts gatewayUrl from query string, leaking gateway auth token. CVSS 8.8." \
+          "Installed: $CURRENT_VERSION, fixed in: $cve_001_fixed" \
+          "Upgrade OpenClaw to >= $cve_001_fixed: npm update -g openclaw"
+      else
+        add_finding \
+          "CHK-CVE-001" "ok" \
+          "Not vulnerable to CVE-2026-25253" \
+          "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-25253." \
+          "Installed: $CURRENT_VERSION >= $cve_001_fixed" \
+          ""
+      fi
 
-    # CHK-CVE-002: CVE-2026-24763 -- Docker command injection
-    cve_002_fixed="2026.1.29"
-    if ! version_gte "$CURRENT_VERSION" "$cve_002_fixed"; then
-      add_finding \
-        "CHK-CVE-002" "critical" \
-        "Vulnerable to CVE-2026-24763: Command injection in Docker sandbox" \
-        "Unsafe PATH env var handling in shell command construction. CVSS 8.8." \
-        "Installed: $CURRENT_VERSION, fixed in: $cve_002_fixed" \
-        "Upgrade OpenClaw to >= $cve_002_fixed: npm update -g openclaw"
-    else
-      add_finding \
-        "CHK-CVE-002" "ok" \
-        "Not vulnerable to CVE-2026-24763" \
-        "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-24763." \
-        "Installed: $CURRENT_VERSION >= $cve_002_fixed" \
-        ""
-    fi
+      # CHK-CVE-002: CVE-2026-24763 -- Docker command injection
+      cve_002_fixed="2026.1.29"
+      if ! version_gte "$CURRENT_VERSION" "$cve_002_fixed"; then
+        add_finding \
+          "CHK-CVE-002" "critical" \
+          "Vulnerable to CVE-2026-24763: Command injection in Docker sandbox" \
+          "Unsafe PATH env var handling in shell command construction. CVSS 8.8." \
+          "Installed: $CURRENT_VERSION, fixed in: $cve_002_fixed" \
+          "Upgrade OpenClaw to >= $cve_002_fixed: npm update -g openclaw"
+      else
+        add_finding \
+          "CHK-CVE-002" "ok" \
+          "Not vulnerable to CVE-2026-24763" \
+          "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-24763." \
+          "Installed: $CURRENT_VERSION >= $cve_002_fixed" \
+          ""
+      fi
 
-    # CHK-CVE-003: CVE-2026-25157 -- SSH command injection
-    cve_003_fixed="2026.1.29"
-    if ! version_gte "$CURRENT_VERSION" "$cve_003_fixed"; then
-      add_finding \
-        "CHK-CVE-003" "critical" \
-        "Vulnerable to CVE-2026-25157: OS command injection via SSH project path" \
-        "Unescaped project root path in sshNodeCommand error echo. CVSS 8.8." \
-        "Installed: $CURRENT_VERSION, fixed in: $cve_003_fixed" \
-        "Upgrade OpenClaw to >= $cve_003_fixed: npm update -g openclaw"
-    else
-      add_finding \
-        "CHK-CVE-003" "ok" \
-        "Not vulnerable to CVE-2026-25157" \
-        "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-25157." \
-        "Installed: $CURRENT_VERSION >= $cve_003_fixed" \
-        ""
+      # CHK-CVE-003: CVE-2026-25157 -- SSH command injection
+      cve_003_fixed="2026.1.29"
+      if ! version_gte "$CURRENT_VERSION" "$cve_003_fixed"; then
+        add_finding \
+          "CHK-CVE-003" "critical" \
+          "Vulnerable to CVE-2026-25157: OS command injection via SSH project path" \
+          "Unescaped project root path in sshNodeCommand error echo. CVSS 8.8." \
+          "Installed: $CURRENT_VERSION, fixed in: $cve_003_fixed" \
+          "Upgrade OpenClaw to >= $cve_003_fixed: npm update -g openclaw"
+      else
+        add_finding \
+          "CHK-CVE-003" "ok" \
+          "Not vulnerable to CVE-2026-25157" \
+          "Installed version ($CURRENT_VERSION) includes the fix for CVE-2026-25157." \
+          "Installed: $CURRENT_VERSION >= $cve_003_fixed" \
+          ""
+      fi
     fi
   fi
 
