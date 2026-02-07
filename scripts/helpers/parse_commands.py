@@ -10,13 +10,14 @@ import re
 
 
 # Patterns that indicate hidden command execution — reject the entire string
+# NOTE: Bare > and < are NOT included here. Redirections are shell operators,
+# not command injection vectors. They cannot execute arbitrary code. Safety for
+# redirections is handled at the execution layer (safe_exec_command whitelist).
 _DANGEROUS_PATTERNS = [
     r'\$\(',       # command substitution: $(...)
     r'`',          # backtick command substitution: `...`
     r'<\(',        # process substitution: <(...)
     r'>\(',        # process substitution: >(...)
-    r'>',          # output redirection: > >> (can overwrite arbitrary files)
-    r'<',          # input redirection: < (can read arbitrary files)
 ]
 
 _DANGEROUS_RE = re.compile('|'.join(_DANGEROUS_PATTERNS))

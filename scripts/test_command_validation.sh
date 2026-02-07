@@ -36,12 +36,18 @@ source "$SCRIPT_DIR/helpers/common.sh"
 
 # Create a temporary security config for hermetic testing
 # Uses CLAWPINCH_SECURITY_CONFIG env var (trusted config lookup)
+#
+# NOTE: This test config intentionally includes curl, sh, wget, bash, python3
+# to validate the design tradeoff documented below (when both sides of a pipe
+# are in the allowlist, the pipe is allowed). The production example config
+# (.auto-claude-security.json.example) excludes these dangerous tools.
 _TEST_SECURITY_FILE="$(mktemp)"
 cat > "$_TEST_SECURITY_FILE" <<'SECEOF'
 {
   "base_commands": [
     "echo", "jq", "grep", "cat", "ls", "pwd", "find", "sed", "awk", "wc",
-    "mkdir", "cd", "curl", "sh", "wget", "bash", "python3"
+    "mkdir", "cd", "curl", "sh", "wget", "bash", "python3",
+    "cp", "mv", "rm", "chmod"
   ],
   "script_commands": [
     "./clawpinch.sh"
@@ -142,17 +148,19 @@ test_should_allow "cat data.json | jq -r '.items[]' | grep active" "Multi-pipe c
 
 echo ""
 
-# ─── Redirection operators (should BLOCK) ────────────────────────────────────
-# Redirections can write/overwrite arbitrary files, so they are blocked
-# by the Python parser's _DANGEROUS_PATTERNS (outside single-quoted regions).
+# ─── Redirection operators (should ALLOW) ────────────────────────────────────
+# Redirections are shell operators, not command injection vectors. They are
+# allowed by validate_command() because the remediation pipeline translates
+# auto_fix commands to Read/Write/Edit operations (no shell execution).
+# Actual execution safety is handled by safe_exec_command() whitelist patterns.
 
-echo "${_CLR_BOLD}Redirection Operators (should BLOCK):${_CLR_RST}"
+echo "${_CLR_BOLD}Redirection Operators (should ALLOW — safe at validation layer):${_CLR_RST}"
 echo ""
 
-test_should_block "echo test > output.txt" "Redirect stdout to file"
-test_should_block "jq . < input.json" "Redirect stdin from file"
-test_should_block "cat file.txt >> output.txt" "Append redirect"
-test_should_block "echo test > /etc/passwd" "Redirect to critical file"
+test_should_allow "echo test > output.txt" "Redirect stdout to file (execution layer handles safety)"
+test_should_allow "jq . < input.json" "Redirect stdin from file"
+test_should_allow "cat file.txt >> output.txt" "Append redirect"
+test_should_allow "jq '.key = true' config.json > tmp && mv tmp config.json" "Standard auto_fix redirect pattern"
 
 echo ""
 

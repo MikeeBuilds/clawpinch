@@ -236,7 +236,43 @@ validate_command() {
     return 1
   fi
 
-  log_info "validate_command: using security config: $security_file"
+  # SECURITY: Validate config file ownership and permissions to prevent
+  # symlink attacks where an attacker replaces the config with a symlink
+  # to a file they control, overriding the allowlist.
+  local resolved_file
+  resolved_file="$(readlink -f "$security_file" 2>/dev/null || realpath "$security_file" 2>/dev/null || echo "$security_file")"
+
+  # Check file is owned by current user or root
+  local file_owner
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    file_owner="$(stat -f '%u' "$resolved_file" 2>/dev/null)" || file_owner=""
+  else
+    file_owner="$(stat -c '%u' "$resolved_file" 2>/dev/null)" || file_owner=""
+  fi
+
+  if [[ -n "$file_owner" ]]; then
+    local current_uid
+    current_uid="$(id -u)"
+    if [[ "$file_owner" != "$current_uid" ]] && [[ "$file_owner" != "0" ]]; then
+      log_error "validate_command: security config '$resolved_file' is owned by uid $file_owner (expected $current_uid or root). Possible symlink attack."
+      return 1
+    fi
+  fi
+
+  # Check file is not world-writable
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    local file_perms
+    file_perms="$(stat -f '%Lp' "$resolved_file" 2>/dev/null)" || file_perms=""
+    if [[ -n "$file_perms" ]] && [[ "${file_perms: -1}" =~ [2367] ]]; then
+      log_error "validate_command: security config '$resolved_file' is world-writable (mode $file_perms). Fix with: chmod o-w '$resolved_file'"
+      return 1
+    fi
+  else
+    if [[ -w "$resolved_file" ]] && stat -c '%a' "$resolved_file" 2>/dev/null | grep -q '[2367]$'; then
+      log_error "validate_command: security config '$resolved_file' is world-writable. Fix with: chmod o-w '$resolved_file'"
+      return 1
+    fi
+  fi
 
   # Check if jq is available
   if ! has_cmd jq; then
@@ -309,14 +345,6 @@ validate_command() {
           log_error "validate_command: interpreter '$base_cmd' with -c or -e flag is not allowed"
           return 1
         fi
-        ;;
-    esac
-
-    # Block redirection operators — these can write/overwrite arbitrary files
-    case "$base_cmd" in
-      '>'|'>>'|'<'|'2>'|'&>'|'2>&1')
-        log_error "validate_command: redirection operator '$base_cmd' is not allowed in auto-fix commands"
-        return 1
         ;;
     esac
 

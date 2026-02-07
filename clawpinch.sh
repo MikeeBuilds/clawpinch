@@ -85,6 +85,34 @@ export CLAWPINCH_SHOW_FIX="$SHOW_FIX"
 export CLAWPINCH_CONFIG_DIR="$CONFIG_DIR"
 export QUIET
 
+# ─── Validate security config (early check for --remediate) ──────────────────
+# Fail fast with a clear setup message instead of per-command failures later.
+
+if [[ "$REMEDIATE" -eq 1 ]]; then
+  _sec_config_found=0
+
+  if [[ -n "${CLAWPINCH_SECURITY_CONFIG:-}" ]] && [[ -f "$CLAWPINCH_SECURITY_CONFIG" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$CLAWPINCH_DIR/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$HOME/.config/clawpinch/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$HOME/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  fi
+
+  if [[ "$_sec_config_found" -eq 0 ]]; then
+    log_error "Security config (.auto-claude-security.json) not found."
+    log_error "The --remediate flag requires a command allowlist to validate auto-fix commands."
+    log_error ""
+    log_error "Setup: copy the example config to a trusted location:"
+    log_error "  cp .auto-claude-security.json.example ~/.config/clawpinch/.auto-claude-security.json"
+    log_error ""
+    log_error "Or set CLAWPINCH_SECURITY_CONFIG to point to your config file."
+    exit 2
+  fi
+fi
+
 # ─── Detect OS ───────────────────────────────────────────────────────────────
 
 CLAWPINCH_OS="$(detect_os)"
