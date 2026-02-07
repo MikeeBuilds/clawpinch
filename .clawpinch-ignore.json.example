@@ -1,0 +1,15 @@
+{
+  "suppressions": [
+    {
+      "id": "CHK-CFG-001",
+      "reason": "Dev environment - open gateway is intentional",
+      "expires": "2099-12-31T23:59:59Z",
+      "suppressed_by": "devops@example.com",
+      "suppressed_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "CHK-SEC-003",
+      "reason": "Test API key in example config - not used in production"
+    }
+  ]
+}
