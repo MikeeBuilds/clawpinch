@@ -290,7 +290,7 @@ else
         log_info "Piping $_non_ok_count findings to Claude for remediation..."
         echo "$_non_ok_findings" | "$_claude_bin" -p \
           --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
-          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) Apply the auto_fix command if available, otherwise implement the remediation manually 3) Verify the fix. Work through findings in order (critical first). Be precise and minimal in your changes."
+          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) Apply the auto_fix command if available, otherwise implement the remediation manually 3) Verify the fix. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: All Bash commands executed through auto_fix are validated against a command allowlist defined in .auto-claude-security.json. Commands not in the allowlist will be rejected with an error message. Only use allowlisted commands such as jq, grep, sed, chmod, and other standard tools for fixes."
       else
         log_info "No actionable findings for remediation."
       fi
