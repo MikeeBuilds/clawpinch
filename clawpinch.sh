@@ -29,6 +29,8 @@ NO_INTERACTIVE=0
 REMEDIATE=0
 PARALLEL_SCANNERS=1
 CONFIG_DIR=""
+SHOW_SUPPRESSED=0
+NO_IGNORE=0
 
 # ─── Usage ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,8 @@ Options:
   --no-interactive  Disable interactive post-scan menu
   --remediate       Run scan then pipe findings to Claude for AI remediation
   --config-dir PATH Explicit path to openclaw config directory
+  --show-suppressed Include suppressed findings in normal output
+  --no-ignore       Disable all suppressions for full audit scan
   -h, --help        Show this help message
 
 Exit codes:
@@ -65,6 +69,8 @@ while [[ $# -gt 0 ]]; do
     --sequential) PARALLEL_SCANNERS=0; shift ;;
     --no-interactive) NO_INTERACTIVE=1; shift ;;
     --remediate)  REMEDIATE=1; NO_INTERACTIVE=1; shift ;;
+    --show-suppressed) SHOW_SUPPRESSED=1; shift ;;
+    --no-ignore)  NO_IGNORE=1; shift ;;
     --config-dir)
       if [[ -z "${2:-}" ]]; then
         log_error "--config-dir requires a path argument"
@@ -86,6 +92,8 @@ done
 export CLAWPINCH_DEEP="$DEEP"
 export CLAWPINCH_SHOW_FIX="$SHOW_FIX"
 export CLAWPINCH_CONFIG_DIR="$CONFIG_DIR"
+export CLAWPINCH_SHOW_SUPPRESSED="$SHOW_SUPPRESSED"
+export CLAWPINCH_NO_IGNORE="$NO_IGNORE"
 export QUIET
 
 # ─── Validate security config (early check for --remediate) ──────────────────
