@@ -448,6 +448,70 @@ get_config_value() {
   jq -r "$filter // empty" "$config_file" 2>/dev/null
 }
 
+# ─── JSON integrity verification ───────────────────────────────────────────
+
+verify_json_integrity() {
+  # Usage: verify_json_integrity <json_file_path>
+  # Returns: 0 if integrity check passes, 1 otherwise
+  local json_file="$1"
+  local sha256_file="${json_file}.sha256"
+
+  # Check if JSON file exists
+  if [[ ! -f "$json_file" ]]; then
+    log_error "JSON file not found: $json_file"
+    return 1
+  fi
+
+  # Check if checksum file exists
+  if [[ ! -f "$sha256_file" ]]; then
+    log_error "Checksum file not found: $sha256_file"
+    return 1
+  fi
+
+  # Read expected hash from .sha256 file (format: <hash>  <filename>)
+  local expected_hash
+  expected_hash="$(awk '{print $1}' "$sha256_file" 2>/dev/null)"
+  if [[ -z "$expected_hash" ]]; then
+    log_error "Failed to read checksum from $sha256_file"
+    return 1
+  fi
+
+  # Compute current hash based on OS
+  local current_hash
+  local os
+  os="$(detect_os)"
+
+  if [[ "$os" == "macos" ]]; then
+    if ! has_cmd shasum; then
+      log_error "shasum command not found (required on macOS)"
+      return 1
+    fi
+    current_hash="$(shasum -a 256 "$json_file" 2>/dev/null | awk '{print $1}')"
+  else
+    # Linux or unknown - try sha256sum
+    if ! has_cmd sha256sum; then
+      log_error "sha256sum command not found"
+      return 1
+    fi
+    current_hash="$(sha256sum "$json_file" 2>/dev/null | awk '{print $1}')"
+  fi
+
+  if [[ -z "$current_hash" ]]; then
+    log_error "Failed to compute hash for $json_file"
+    return 1
+  fi
+
+  # Compare hashes
+  if [[ "$current_hash" != "$expected_hash" ]]; then
+    log_error "Integrity check failed for $json_file"
+    log_error "Expected: $expected_hash"
+    log_error "Got:      $current_hash"
+    return 1
+  fi
+
+  return 0
+}
+
 # ─── Finding emitter ────────────────────────────────────────────────────────
 # Each scanner outputs findings as JSON objects, one per line, collected
 # into a JSON array by the orchestrator.
