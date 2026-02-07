@@ -1,8 +1,0 @@
-{
-  "suppressions": [
-    {
-      "id": "CHK-CFG-001",
-      "reason": "Test suppression with no expiry date"
-    }
-  ]
-}
