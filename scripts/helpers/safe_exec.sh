@@ -146,6 +146,10 @@ _validate_command() {
       if [[ "$pattern" == '&&' ]] && [[ "$cmd" =~ ^jq[[:space:]] ]]; then
         continue
       fi
+      # Special case: allow '&' if it's part of '&&' in jq commands
+      if [[ "$pattern" == '&' ]] && [[ "$cmd" =~ '&&' ]] && [[ "$cmd" =~ ^jq[[:space:]] ]]; then
+        continue
+      fi
       _safe_exec_log error "Command rejected: contains dangerous pattern '$pattern'"
       return 1
     fi
