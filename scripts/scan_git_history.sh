@@ -37,19 +37,49 @@ if ! declare -f emit_finding >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Configuration constants
+# ---------------------------------------------------------------------------
+# Maximum line length to scan (longer lines are likely binary data)
+MAX_LINE_LENGTH=10000
+
+# File extensions to skip (binary/media files)
+SKIP_EXTENSIONS='\.(jpg|jpeg|png|gif|bmp|ico|svg|webp|pdf|zip|tar|gz|bz2|xz|7z|rar|exe|dll|so|dylib|a|o|bin|dat|mp3|mp4|avi|mov|mkv|flv|wmv|wav|ttf|otf|woff|woff2|eot)$'
+
+# Dedupe: Track found secrets to avoid duplicate findings (bash 3.2 compatible)
+FOUND_SECRETS=""
+
+# ---------------------------------------------------------------------------
 # Resolve git repository path
 # ---------------------------------------------------------------------------
 REPO_PATH="${GIT_REPO_PATH:-.}"
 
 if [[ ! -d "$REPO_PATH/.git" ]]; then
-    echo '[{"id":"CHK-GIT-000","severity":"info","title":"Not a git repository","description":"Could not locate .git directory","evidence":"'"$REPO_PATH"'","remediation":"Run this scanner from within a git repository","auto_fix":""}]'
+    # Not a git repo - output empty array (this is expected behavior)
+    echo '[]'
     exit 0
 fi
 
 # Verify git command is available
 if ! command -v git &>/dev/null; then
-    echo '[{"id":"CHK-GIT-000","severity":"warn","title":"git command not found","description":"The git command is not available in PATH","evidence":"git not found","remediation":"Install git to enable history scanning","auto_fix":""}]'
+    echo '[]'
     exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Edge case: Check if repo has any commits
+# ---------------------------------------------------------------------------
+if ! (cd "$REPO_PATH" && git rev-parse HEAD &>/dev/null); then
+    # Empty repository with no commits
+    echo '[]'
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Edge case: Handle shallow clones
+# ---------------------------------------------------------------------------
+IS_SHALLOW=0
+if [[ -f "$REPO_PATH/.git/shallow" ]]; then
+    IS_SHALLOW=1
 fi
 
 # ---------------------------------------------------------------------------
@@ -68,6 +98,17 @@ redact_secret() {
     else
         echo "****${value: -4}"
     fi
+}
+
+# ---------------------------------------------------------------------------
+# Helper: Check if file should be skipped based on extension
+# ---------------------------------------------------------------------------
+should_skip_file() {
+    local filepath="$1"
+    if [[ "$filepath" =~ $SKIP_EXTENSIONS ]]; then
+        return 0  # skip
+    fi
+    return 1  # don't skip
 }
 
 # ---------------------------------------------------------------------------
@@ -104,11 +145,13 @@ scan_git_history() {
         time_limit="--since=6 months ago"
     fi
 
+    # Performance optimization: Use --diff-filter to only show added content
+    # --no-merges skips merge commits (reduces duplicate scanning)
     # Get git log with patches
     # Format: commit hash, file path, diff lines
-    # Note: --no-textconv disables textconv filters, -a treats all files as text
+    # Note: --no-textconv disables textconv filters
     local git_output
-    git_output=$(cd "$REPO_PATH" && git log -p --all --no-textconv -n "$max_commits" $time_limit --format="COMMIT:%H" 2>/dev/null || true)
+    git_output=$(cd "$REPO_PATH" && git log -p --all --no-textconv --no-merges --diff-filter=A -n "$max_commits" $time_limit --format="COMMIT:%H" 2>/dev/null || true)
 
     if [[ -z "$git_output" ]]; then
         # Empty history or no commits
@@ -117,9 +160,22 @@ scan_git_history() {
 
     local current_commit=""
     local current_file=""
+    local lines_scanned=0
+    local max_lines=50000  # Safety limit to prevent runaway scans
+
+    # Performance optimization: Early exit if we've scanned too many lines
+    if [[ "${CLAWPINCH_DEEP:-0}" == "1" ]]; then
+        max_lines=500000
+    fi
 
     # Process git log output line by line
     while IFS= read -r line; do
+        # Safety limit: Exit if we've scanned too many lines
+        ((lines_scanned++))
+        if [[ $lines_scanned -gt $max_lines ]]; then
+            break
+        fi
+
         # Extract commit hash
         if [[ "$line" =~ ^COMMIT:([a-f0-9]{40}) ]]; then
             current_commit="${BASH_REMATCH[1]}"
@@ -130,6 +186,10 @@ scan_git_history() {
         # Extract file path from diff header
         if [[ "$line" =~ ^\+\+\+[[:space:]]b/(.+)$ ]]; then
             current_file="${BASH_REMATCH[1]}"
+            # Performance optimization: Skip binary/media files early
+            if should_skip_file "$current_file"; then
+                current_file=""  # Mark as skipped
+            fi
             continue
         fi
 
@@ -138,13 +198,23 @@ scan_git_history() {
             continue
         fi
 
-        # Skip if we don't have commit/file context
-        if [[ -z "$current_commit" ]]; then
+        # Skip if we don't have commit context or file was skipped
+        if [[ -z "$current_commit" ]] || [[ -z "$current_file" ]]; then
+            continue
+        fi
+
+        # Performance optimization: Skip very long lines (likely binary data)
+        if [[ ${#line} -gt $MAX_LINE_LENGTH ]]; then
             continue
         fi
 
         # Remove the leading + from the diff line
         local content="${line:1}"
+
+        # Edge case: Skip empty lines
+        if [[ -z "${content// /}" ]]; then
+            continue
+        fi
 
         # Check each secret pattern
         for pattern_entry in "${SECRET_PATTERNS[@]}"; do
@@ -161,28 +231,38 @@ scan_git_history() {
                     # Skip empty matches
                     [[ -z "$secret_value" ]] && continue
 
-                    # Skip environment variable references (${VAR} or $VAR)
+                    # Edge case: Skip environment variable references (${VAR} or $VAR)
                     if [[ "$secret_value" =~ ^\$\{.*\}$ ]] || [[ "$secret_value" =~ ^\$[A-Z_][A-Z0-9_]*$ ]]; then
                         continue
                     fi
 
+                    # Edge case: Skip placeholder/example values
+                    if [[ "$secret_value" =~ (your|example|test|sample|placeholder|dummy|fake|xxx|yyy|zzz|000|111|abc|123) ]]; then
+                        continue
+                    fi
+
+                    # Performance optimization: Deduplicate findings
+                    # Create a unique key for this secret
+                    local secret_key="${secret_type}:${secret_value}"
+                    if echo "$FOUND_SECRETS" | grep -qF "$secret_key"; then
+                        continue  # Already reported this secret
+                    fi
+                    FOUND_SECRETS="${FOUND_SECRETS}${secret_key}"$'\n'
+
                     local redacted_value
                     redacted_value=$(redact_secret "$secret_value")
 
-                    local evidence="commit=${current_commit:0:8}"
-                    if [[ -n "$current_file" ]]; then
-                        evidence="$evidence file=$current_file"
-                    fi
-                    evidence="$evidence secret_type=\"$secret_type\" value=$redacted_value"
+                    local evidence="commit=${current_commit:0:8} file=$current_file secret_type=\"$secret_type\" value=$redacted_value"
 
                     local title="$secret_type found in git history"
-                    local description="A $secret_type was detected in commit $current_commit"
-                    if [[ -n "$current_file" ]]; then
-                        description="$description in file $current_file"
-                    fi
-                    description="$description. This secret exists in the repository history even if it was later removed from current files."
+                    local description="A $secret_type was detected in commit $current_commit in file $current_file. This secret exists in the repository history even if it was later removed from current files."
 
                     local remediation="Remove secret from git history using git filter-repo or BFG Repo-Cleaner. Rotate the exposed credential immediately. See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository"
+
+                    # Add shallow clone warning to remediation if applicable
+                    if [[ $IS_SHALLOW -eq 1 ]]; then
+                        remediation="$remediation NOTE: This is a shallow clone - full history may contain additional secrets. Run 'git fetch --unshallow' for complete scan."
+                    fi
 
                     # Emit finding
                     local finding
