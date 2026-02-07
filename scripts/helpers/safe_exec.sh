@@ -34,7 +34,7 @@ set -euo pipefail
 # define a finite set of allowed command structures. Each pattern is a regex
 # that matches a specific, safe operation. For example:
 #
-#   Pattern:  ^jq [^|;&$`]+\.json > tmp && mv tmp [^|;&$`]+\.json$
+#   Pattern:  ^jq [^|;&$`><]+\.json > tmp && mv tmp [a-zA-Z0-9/._-]+\.json$
 #   Matches:  jq '.auth=true' config.json > tmp && mv tmp config.json
 #   Rejects:  jq '.auth=true' config.json | sh    (pipe to shell)
 #   Rejects:  jq '.auth=true'; rm -rf /           (command injection)
@@ -133,11 +133,12 @@ set -euo pipefail
 declare -a _SAFE_EXEC_PATTERNS=(
   # jq JSON modification with output to temp file + mv
   # Example: jq '.gateway.bindAddress = "127.0.0.1:3000"' openclaw.json > tmp && mv tmp openclaw.json
-  '^jq [^|;&$`]+[a-zA-Z0-9/._-]+\.json > tmp && mv tmp [a-zA-Z0-9/._-]+\.json$'
+  # Note: [^|;&$`><] excludes redirection chars to prevent injection like "jq .>/etc/passwd ..."
+  '^jq [^|;&$`><]+[a-zA-Z0-9/._-]+\.json > tmp && mv tmp [a-zA-Z0-9/._-]+\.json$'
 
   # jq JSON modification to temp file (without mv in same command)
   # Example: jq '.gateway.requireAuth = true' config.json > tmp
-  '^jq [^|;&$`]+[a-zA-Z0-9/._-]+\.json > tmp$'
+  '^jq [^|;&$`><]+[a-zA-Z0-9/._-]+\.json > tmp$'
 
   # mv command for file rename (typically used after jq)
   # Example: mv tmp openclaw.json
@@ -171,6 +172,7 @@ declare -a _DANGEROUS_PATTERNS=(
   '\|\|'        # conditional execution
   '&'           # background execution
   '\$\('        # command substitution
+  '\$\{'        # variable/command substitution (${VAR}, ${cmd})
   '`'           # command substitution (backticks)
   '\('          # process substitution / subshell
   '\)'          # process substitution / subshell
@@ -200,8 +202,8 @@ declare -a _DANGEROUS_PATTERNS=(
   # Path traversal
   '\.\.'        # directory traversal
 
-  # Environment variable expansion (except in quotes)
-  '\$[A-Z_][A-Z0-9_]*'
+  # Environment variable expansion (all forms: $VAR, $var, ${VAR})
+  '\$[a-zA-Z_][a-zA-Z0-9_]*'
 
   # Shell special characters
   '~'           # home directory expansion
@@ -252,11 +254,15 @@ _validate_command() {
   # Step 1: Check for dangerous patterns first (blacklist)
   for pattern in "${_DANGEROUS_PATTERNS[@]}"; do
     if [[ "$cmd" =~ $pattern ]]; then
-      # Special case: allow '&&' only in whitelisted jq > tmp && mv tmp patterns
+      # Special case: allow '&&' only in the whitelisted `jq ... > tmp && mv tmp ...` pattern.
+      # This check is intentionally loose (it allows '&&' in any jq command) because the
+      # stricter whitelist pattern in Step 2 will enforce the full, safe command structure.
+      # This just prevents the blacklist from prematurely rejecting a valid jq+mv command.
       if [[ "$pattern" == '&&' ]] && [[ "$cmd" =~ ^jq[[:space:]] ]]; then
         continue
       fi
-      # Special case: allow '&' if it's part of '&&' in jq commands
+      # Special case: allow '&' if it's part of '&&' in jq commands, preventing a false
+      # positive from the single '&' blacklist entry matching the '&&' operator above.
       if [[ "$pattern" == '&' ]] && [[ "$cmd" =~ '&&' ]] && [[ "$cmd" =~ ^jq[[:space:]] ]]; then
         continue
       fi
@@ -367,8 +373,8 @@ _validate_command() {
 safe_exec_command() {
   local cmd="$1"
 
-  # Trim leading/trailing whitespace
-  cmd="$(echo "$cmd" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  # Trim leading/trailing whitespace (printf '%s' is safer than echo for arbitrary strings)
+  cmd="$(printf '%s' "$cmd" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 
   # Reject empty commands
   if [[ -z "$cmd" ]]; then
