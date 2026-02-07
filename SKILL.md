@@ -61,6 +61,12 @@ clawpinch --no-interactive
 # AI-powered remediation — scan then pipe to Claude for automated fixing
 clawpinch --remediate
 
+# Show suppressed findings in output (marked with [SUPPRESSED])
+clawpinch --show-suppressed
+
+# Disable all suppressions for full audit scans
+clawpinch --no-ignore
+
 # Target specific config directory
 clawpinch --config-dir /path/to/openclaw/config
 
@@ -83,6 +89,17 @@ Each finding is a JSON object:
   "auto_fix": "Shell command to fix (may be empty)"
 }
 ```
+
+When suppressions are enabled via `.clawpinch-ignore.json`, the output format changes:
+
+```json
+{
+  "findings": [ /* active findings only */ ],
+  "suppressed": [ /* suppressed findings */ ]
+}
+```
+
+Suppressed findings do not count toward severity totals or exit codes.
 
 ## Check Categories
 
@@ -121,6 +138,47 @@ npx clawpinch --json --no-interactive | jq '[.[] | select(.severity == "critical
 npx clawpinch --quiet --no-interactive
 ```
 
+## Finding Suppression
+
+Suppress specific findings by creating `.clawpinch-ignore.json`:
+
+```json
+{
+  "suppressions": [
+    {
+      "id": "CHK-CFG-001",
+      "reason": "Dev environment - open gateway is intentional",
+      "expires": "2025-12-31T23:59:59Z",
+      "suppressed_by": "devops@example.com",
+      "suppressed_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+**Fields:**
+- `id` (required): Check ID to suppress
+- `reason` (required): Justification for suppression
+- `expires` (optional): ISO 8601 timestamp when suppression expires
+- `suppressed_by` (optional): Email/identifier of approver
+- `suppressed_at` (optional): ISO 8601 timestamp when created
+
+**Behavior:**
+- Suppressed findings appear in `suppressed` array, not `findings`
+- Suppressed findings excluded from severity counts and exit codes
+- Expired suppressions automatically reactivate
+- `--show-suppressed`: Include suppressed findings in output with `[SUPPRESSED]` marker
+- `--no-ignore`: Disable all suppressions for full audits
+
+**Use cases:**
+- **CI/CD:** Prevent pipeline failures from accepted risks
+- **Development:** Suppress intentional misconfigurations in dev environments
+- **Gradual remediation:** Suppress findings with expiration dates for periodic review
+- **Security review:** Document accepted risks with justifications
+- **Audits:** Use `--no-ignore` for quarterly full scans
+
+See `.clawpinch-ignore.json.example` for detailed examples.
+
 ## Dependencies
 
 - **Required:** `bash` >= 4.0, `jq`
@@ -139,5 +197,7 @@ npx clawpinch --quiet --no-interactive
 
 | Code | Meaning |
 |------|---------|
-| 0 | No critical findings |
-| 1 | One or more critical findings detected |
+| 0 | No active critical findings (suppressed findings excluded) |
+| 1 | One or more active critical findings detected |
+
+**Note:** Suppressed findings do not affect exit codes. Use `--no-ignore` to include suppressed findings in exit code calculation.
