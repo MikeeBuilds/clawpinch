@@ -730,6 +730,7 @@ print_summary() {
   local ok="${4:-0}"
   local scanner_count="${5:-0}"
   local elapsed="${6:-0}"
+  local suppressed="${7:-0}"
 
   local total=$(( critical + warn + info + ok ))
   local w
@@ -836,6 +837,20 @@ print_summary() {
   printf '%*s%b%s%b' "$time_lpad" '' "$_CLR_DIM" "$time_text" "$_CLR_RST"
   printf '%*s' "$time_rpad" ''
   printf " %b%s%b\n" "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+
+  # Suppressed count line (only show if > 0)
+  if (( suppressed > 0 )); then
+    local supp_text
+    supp_text="$(printf 'Suppressed: %d findings' "$suppressed")"
+    local supp_len=${#supp_text}
+    local supp_lpad=2
+    local supp_rpad=$(( inner - supp_lpad - supp_len ))
+    if (( supp_rpad < 0 )); then supp_rpad=0; fi
+    printf "  %b%s%b " "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+    printf '%*s%b%s%b' "$supp_lpad" '' "$_CLR_DIM" "$supp_text" "$_CLR_RST"
+    printf '%*s' "$supp_rpad" ''
+    printf " %b%s%b\n" "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+  fi
 
   # Empty line
   printf "  %b%s%b " "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"

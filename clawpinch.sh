@@ -386,6 +386,7 @@ count_critical="$(echo "$ACTIVE_FINDINGS" | jq '[.[] | select(.severity == "crit
 count_warn="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "warn")] | length')"
 count_info="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "info")] | length')"
 count_ok="$(echo "$ACTIVE_FINDINGS"       | jq '[.[] | select(.severity == "ok")] | length')"
+count_suppressed="$(echo "$SUPPRESSED_FINDINGS" | jq 'length')"
 
 # ─── Output ──────────────────────────────────────────────────────────────────
 
@@ -419,7 +420,7 @@ else
   fi
 
   # Always print summary dashboard (animated when TTY)
-  print_summary_animated "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed"
+  print_summary_animated "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed" "$count_suppressed"
 
   # Contextual completion message
   print_completion_message "$count_critical" "$count_warn"
