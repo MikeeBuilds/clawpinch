@@ -130,15 +130,18 @@ run_scanners_parallel() {
 
     # Run scanner in background, redirecting output to temp file
     (
+      # Initialize with empty array in case scanner fails to run
+      echo '[]' > "$temp_file"
+
+      # Run scanner - exit code doesn't matter, we just need valid JSON output
+      # (Scanners exit with code 1 when they find critical findings, but still output valid JSON)
       if [[ "$scanner" == *.sh ]]; then
-        bash "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
+        bash "$scanner" > "$temp_file" 2>/dev/null || true
       elif [[ "$scanner" == *.py ]]; then
         if has_cmd python3; then
-          python3 "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
+          python3 "$scanner" > "$temp_file" 2>/dev/null || true
         elif has_cmd python; then
-          python "$scanner" 2>/dev/null > "$temp_file" || echo '[]' > "$temp_file"
-        else
-          echo '[]' > "$temp_file"
+          python "$scanner" > "$temp_file" 2>/dev/null || true
         fi
       fi
     ) &
