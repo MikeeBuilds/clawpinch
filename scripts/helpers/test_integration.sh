@@ -309,6 +309,47 @@ test_chmod_600() {
 }
 
 # ---------------------------------------------------------------------------
+# Test: CHK-PRM-013 auto-fix (SSH private key permissions)
+# ---------------------------------------------------------------------------
+test_prm_013() {
+    # Create mock SSH directory
+    local ssh_dir="${TEST_DIR}/.ssh"
+    mkdir -p "$ssh_dir"
+
+    # Create test SSH private keys with wrong permissions
+    local test_key="${ssh_dir}/id_test_rsa"
+    local test_pem="${ssh_dir}/test.pem"
+
+    echo "-----BEGIN RSA PRIVATE KEY-----" > "$test_key"
+    echo "fake key content" >> "$test_key"
+    echo "-----END RSA PRIVATE KEY-----" >> "$test_key"
+
+    echo "-----BEGIN PRIVATE KEY-----" > "$test_pem"
+    echo "fake pem content" >> "$test_pem"
+    echo "-----END PRIVATE KEY-----" >> "$test_pem"
+
+    # Set insecure permissions
+    chmod 644 "$test_key"
+    chmod 644 "$test_pem"
+
+    # Run the auto-fix command
+    chmod 600 "$test_key"
+    chmod 600 "$test_pem"
+
+    # Verify permissions were fixed
+    local perms_key perms_pem
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        perms_key=$(stat -f "%Lp" "$test_key")
+        perms_pem=$(stat -f "%Lp" "$test_pem")
+    else
+        perms_key=$(stat -c "%a" "$test_key")
+        perms_pem=$(stat -c "%a" "$test_pem")
+    fi
+
+    [[ "$perms_key" == "600" ]] && [[ "$perms_pem" == "600" ]]
+}
+
+# ---------------------------------------------------------------------------
 # Main test execution
 # ---------------------------------------------------------------------------
 
@@ -336,6 +377,7 @@ run_test "CHK-CFG-010: Enable sensitive data redaction" "test_cfg_010"
 run_test "CHK-CFG-011: Enable browser restrictions" "test_cfg_011"
 run_test "CHK-CFG-012: Disable network discovery" "test_cfg_012"
 run_test "File permissions: chmod 600" "test_chmod_600"
+run_test "CHK-PRM-013: Fix SSH key permissions" "test_prm_013"
 
 echo "─────────────────────────────────────────────────────────────────────────────"
 echo ""
