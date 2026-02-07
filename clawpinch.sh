@@ -257,7 +257,9 @@ fi
 # For --show-suppressed mode, merge suppressed back into active for display
 DISPLAY_FINDINGS="$ACTIVE_FINDINGS"
 if [[ "$SHOW_SUPPRESSED" -eq 1 ]]; then
-  DISPLAY_FINDINGS="$(echo "$ACTIVE_FINDINGS" "$SUPPRESSED_FINDINGS" | jq -s '.[0] + .[1] | sort_by(.severity | if . == "critical" then 0 elif . == "warn" then 1 elif . == "info" then 2 elif . == "ok" then 3 else 4 end)')"
+  # Mark suppressed findings with a "suppressed": true field before merging
+  MARKED_SUPPRESSED="$(echo "$SUPPRESSED_FINDINGS" | jq '[.[] | . + {suppressed: true}]')"
+  DISPLAY_FINDINGS="$(echo "$ACTIVE_FINDINGS" "$MARKED_SUPPRESSED" | jq -s '.[0] + .[1] | sort_by(.severity | if . == "critical" then 0 elif . == "warn" then 1 elif . == "info" then 2 elif . == "ok" then 3 else 4 end)')"
 fi
 
 # ─── Count by severity ──────────────────────────────────────────────────────
