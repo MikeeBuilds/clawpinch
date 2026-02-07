@@ -5,6 +5,10 @@ set -euo pipefail
 # Post-scan interactive menu: review findings, auto-fix, export handoff doc.
 # Sourced by clawpinch.sh — depends on common.sh & report.sh being loaded first.
 
+# Source safe command execution module
+# shellcheck source=safe_exec.sh
+source "$(dirname "${BASH_SOURCE[0]}")/safe_exec.sh"
+
 # ─── Table box-drawing constants ─────────────────────────────────────────────
 
 readonly _TBL_TL='┌' _TBL_TR='┐' _TBL_BL='└' _TBL_BR='┘'
@@ -46,7 +50,7 @@ _run_fix() {
   fi
 
   printf '\n  %b$%b %s\n' "$_CLR_DIM" "$_CLR_RST" "$cmd"
-  if eval "$cmd" 2>&1 | while IFS= read -r line; do printf '  %s\n' "$line"; done; then
+  if safe_exec_command "$cmd" 2>&1 | while IFS= read -r line; do printf '  %s\n' "$line"; done; then
     printf '  %b✓ Fix applied successfully%b\n' "$_CLR_OK" "$_CLR_RST"
     return 0
   else
@@ -240,20 +244,17 @@ print_findings_compact() {
         f_title="${f_title:0:$((max_title_len - 3))}..."
       fi
 
-      # Fix indicator
-      local fix_mark
-      if [[ -n "$f_auto_fix" ]]; then
-        fix_mark=" ${_CLR_OK}✓${_CLR_RST} "
-      else
-        fix_mark=" ─ "
-      fi
-
+      # Fix indicator (fixed-width, no color padding issues)
       printf '  %s' "$_TBL_V"
       printf " %-*s" $(( col_id - 2 )) "$f_id"
       printf ' %s' "$_TBL_V"
       printf " %-*s" $(( col_title - 2 )) "$f_title"
       printf ' %s' "$_TBL_V"
-      printf '%b' "$fix_mark"
+      if [[ -n "$f_auto_fix" ]]; then
+        printf ' %b✓%b  ' "$_CLR_OK" "$_CLR_RST"
+      else
+        printf '  ─  '
+      fi
       printf '%s\n' "$_TBL_V"
     done
 
@@ -266,7 +267,7 @@ print_findings_compact() {
       printf ' %s' "$_TBL_V"
       printf " %-*s" $(( col_title - 2 )) "$more_text"
       printf ' %s' "$_TBL_V"
-      printf "     "
+      printf '  ─  '
       printf '%s\n' "$_TBL_V"
     fi
 
@@ -576,7 +577,7 @@ auto_fix_all() {
       continue
     fi
 
-    if eval "$f_cmd" >/dev/null 2>&1; then
+    if safe_exec_command "$f_cmd" >/dev/null 2>&1; then
       printf '%b✓ pass%b\n' "$_CLR_OK" "$_CLR_RST"
       passed=$(( passed + 1 ))
     else

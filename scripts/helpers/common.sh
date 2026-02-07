@@ -89,6 +89,70 @@ export _CLR_BOX _CLR_SPINNER
 export _CLR_RED _CLR_YLW _CLR_BLU _CLR_GRN
 export _CLR_DIM _CLR_BOLD _CLR_WHITE _CLR_UL _CLR_RST
 
+# ─── Emoji support detection ─────────────────────────────────────────────
+
+_CLAWPINCH_HAS_EMOJI=1
+if [[ "$_CLAWPINCH_HAS_COLOR" -eq 0 ]] || [[ "${TERM:-}" == "linux" ]] || [[ "${TERM:-}" == "dumb" ]]; then
+  _CLAWPINCH_HAS_EMOJI=0
+fi
+export _CLAWPINCH_HAS_EMOJI
+
+# ─── Security tips (shown during spinner rotation) ───────────────────────
+
+_TIPS=(
+  "Rotate API keys every 90 days"
+  "Never store secrets in plaintext config"
+  "Use allowlists, not blocklists"
+  "Pin dependency versions in production"
+  "Audit cron jobs for privilege escalation"
+  "Sandbox skill execution environments"
+  "Enable TLS for all API endpoints"
+  "Use short-lived tokens over static keys"
+  "Monitor for DNS rebinding attacks"
+  "Review CORS origins quarterly"
+  "Hash-verify supply chain packages"
+  "Restrict wildcard permissions"
+  "Log all privileged operations"
+  "Check CVE databases on every deploy"
+  "Separate dev and prod credentials"
+  "Use mTLS for service-to-service auth"
+  "Validate webhook signatures"
+  "Rate-limit authentication endpoints"
+  "Scan for base64-encoded payloads in skills"
+  "Enforce least-privilege for all agents"
+  "Disable unused network ports"
+  "Sign skill packages cryptographically"
+  "Use read-only filesystem where possible"
+  "Test disaster recovery runbooks"
+  "Keep your claws sharp — audit regularly"
+)
+
+# ─── Init messages (typewriter effect on startup) ─────────────────────────
+
+_INIT_MSGS=(
+  "Sharpening claws..."
+  "Checking for crabs..."
+  "Snapping into action..."
+  "Scanning the reef..."
+  "Deploying pinch protocols..."
+  "Calibrating claw sensors..."
+  "Loading threat intelligence..."
+  "Preparing security sweep..."
+)
+
+# ─── Glow color (animated accents) ───────────────────────────────────────
+
+if [[ "$_CLAWPINCH_HAS_COLOR" -eq 1 ]]; then
+  if [[ "$_CLAWPINCH_HAS_256" -eq 1 ]]; then
+    _CLR_GLOW='\033[38;5;219m'  # pink glow for accents
+  else
+    _CLR_GLOW="$_CLR_BOLD"
+  fi
+else
+  _CLR_GLOW=''
+fi
+export _CLR_GLOW
+
 # ─── Terminal width helper ─────────────────────────────────────────────────
 
 term_width() {

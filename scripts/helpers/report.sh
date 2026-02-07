@@ -30,6 +30,21 @@ readonly _SPINNER_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 # Bar chart characters
 readonly _BAR_FULL='█' _BAR_EMPTY='░'
 
+# ─── Animation cleanup (signal handler) ──────────────────────────────────
+
+_cleanup_animation() {
+  # Kill spinner if running
+  if [[ -n "${_SPINNER_PID:-}" ]]; then
+    kill "$_SPINNER_PID" 2>/dev/null || true
+    wait "$_SPINNER_PID" 2>/dev/null || true
+    _SPINNER_PID=""
+  fi
+  # Restore cursor visibility
+  printf '\033[?25h' >&2
+  # Clear current line (in case spinner was mid-write)
+  printf '\r\033[K' >&2
+}
+
 # ─── Layout constants ──────────────────────────────────────────────────────
 
 _box_width() {
@@ -109,12 +124,13 @@ print_header() {
   printf '%*s' $(( w - 4 )) ''
   printf "${_CLR_BOX}%s${_CLR_RST}\n" "$_BOX_V"
 
-  # CLAW lines
+  # CLAW lines (centered)
   local idx=0
   for line in "${claw_lines[@]}"; do
     local line_len=${#line}
-    local lpad=3
+    local lpad=$(( (inner - line_len) / 2 ))
     local rpad=$(( inner - lpad - line_len ))
+    if (( lpad < 0 )); then lpad=0; fi
     if (( rpad < 0 )); then rpad=0; fi
     printf "  ${_CLR_BOX}%s${_CLR_RST}" "$_BOX_V"
     printf '%*s' "$lpad" ''
@@ -124,12 +140,13 @@ print_header() {
     idx=$(( idx + 1 ))
   done
 
-  # PINCH lines
+  # PINCH lines (centered)
   idx=0
   for line in "${pinch_lines[@]}"; do
     local line_len=${#line}
-    local lpad=2
+    local lpad=$(( (inner - line_len) / 2 ))
     local rpad=$(( inner - lpad - line_len ))
+    if (( lpad < 0 )); then lpad=0; fi
     if (( rpad < 0 )); then rpad=0; fi
     printf "  ${_CLR_BOX}%s${_CLR_RST}" "$_BOX_V"
     printf '%*s' "$lpad" ''
@@ -145,7 +162,7 @@ print_header() {
   printf "${_CLR_BOX}%s${_CLR_RST}\n" "$_BOX_V"
 
   # Tagline
-  local tagline="Don't get pinched.  v1.2.0"
+  local tagline="Don't get pinched.  v1.2.1"
   local tag_len=${#tagline}
   local tag_lpad=$(( (inner - tag_len) / 2 ))
   local tag_rpad=$(( inner - tag_lpad - tag_len ))
@@ -163,15 +180,201 @@ print_header() {
   printf '\n'
 }
 
+# ─── Animated banner reveal ───────────────────────────────────────────────
+
+print_header_animated() {
+  # Fall back to static if not TTY or quiet
+  if [[ ! -t 2 ]] || [[ "${QUIET:-0}" -eq 1 ]]; then
+    print_header
+    return
+  fi
+
+  local w
+  w="$(_box_width)"
+  local inner=$(( w - 4 ))
+
+  # Hide cursor during animation
+  printf '\033[?25l' >&2
+
+  # ── Phase 1: Animated crab beach scene (3 wave frames) ──
+
+  # Beach scene lines (fixed-width ASCII art)
+  local -a crab_art=(
+    '            .--.__'
+    '           /  (\")  \'
+    '          | oo  oo |'
+    '    ,,   _| ()  () |_   ,,'
+    '   (  \_/  \______/  \_/  )'
+    '    \__/ \__________/ \__/'
+    '      |  /  ||  ||  \  |'
+    '      \_/   ||  ||   \_/'
+  )
+
+  local -a wave1=(
+    '  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    '      ~     ~     ~     ~     ~'
+  )
+  local -a wave2=(
+    '   ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    ' ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    '        ~     ~     ~     ~'
+  )
+  local -a wave3=(
+    '~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    '  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~'
+    '    ~     ~     ~     ~     ~'
+  )
+
+  local sand='.....................................'
+
+  # Draw box top
+  printf '\n' >&2
+  printf "  ${_CLR_BOX}%s" "$_BOX_TL" >&2
+  _hline "$_BOX_H" $(( w - 4 )) "$_CLR_BOX" >&2
+  printf "%s${_CLR_RST}\n" "$_BOX_TR" >&2
+
+  # Empty line
+  _print_box_line() {
+    local text="$1" clr="${2:-}" vlen=${#1}
+    local lp=$(( (inner - vlen) / 2 ))
+    local rp=$(( inner - lp - vlen ))
+    if (( lp < 0 )); then lp=0; fi
+    if (( rp < 0 )); then rp=0; fi
+    printf "  ${_CLR_BOX}%s${_CLR_RST}" "$_BOX_V" >&2
+    printf '%*s' "$lp" '' >&2
+    if [[ -n "$clr" ]]; then
+      printf '%b%s%b' "$clr" "$text" "$_CLR_RST" >&2
+    else
+      printf '%s' "$text" >&2
+    fi
+    printf '%*s' "$rp" '' >&2
+    printf "${_CLR_BOX}%s${_CLR_RST}\n" "$_BOX_V" >&2
+  }
+
+  _print_box_empty() {
+    printf "  ${_CLR_BOX}%s${_CLR_RST}" "$_BOX_V" >&2
+    printf '%*s' "$inner" '' >&2
+    printf "${_CLR_BOX}%s${_CLR_RST}\n" "$_BOX_V" >&2
+  }
+
+  # Count total lines in scene: empty + 8 crab + empty + sand + 3 waves + empty = 15
+  local scene_lines=15
+
+  # Helper to draw one full scene frame with a given wave set
+  _draw_scene_frame() {
+    local wave_idx="$1"
+    _print_box_empty
+
+    # Crab (red/orange)
+    local cline
+    for cline in "${crab_art[@]}"; do
+      _print_box_line "$cline" "$_CLR_BANNER_R2"
+    done
+
+    _print_box_empty
+
+    # Sand
+    _print_box_line "$sand" "$_CLR_WARN"
+
+    # Waves — select by index (bash 3.2 compatible, no nameref)
+    if [[ "$wave_idx" == "1" ]]; then
+      _print_box_line "${wave1[0]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave1[1]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave1[2]}" "$_CLR_BANNER_C2"
+    elif [[ "$wave_idx" == "2" ]]; then
+      _print_box_line "${wave2[0]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave2[1]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave2[2]}" "$_CLR_BANNER_C2"
+    else
+      _print_box_line "${wave3[0]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave3[1]}" "$_CLR_BANNER_C2"
+      _print_box_line "${wave3[2]}" "$_CLR_BANNER_C2"
+    fi
+
+    _print_box_empty
+  }
+
+  # Animate 3 wave frames
+  local frame_idx
+  for frame_idx in 1 2 3; do
+    # Move cursor up to overwrite scene (skip first frame)
+    if [[ "$frame_idx" != "1" ]]; then
+      printf "\033[${scene_lines}A" >&2
+    fi
+    _draw_scene_frame "$frame_idx"
+    sleep 0.4
+  done
+
+  sleep 0.3
+
+  # ── Phase 2: Transition to CLAW PINCH text ──
+  # Move cursor back up over the scene
+  printf "\033[${scene_lines}A" >&2
+
+  local -a claw_lines=(
+    "██████╗██╗      █████╗ ██╗    ██╗"
+    "██╔════╝██║     ██╔══██╗██║    ██║"
+    "██║     ██║     ███████║██║ █╗ ██║"
+    "██║     ██║     ██╔══██║██║███╗██║"
+    "╚██████╗███████╗██║  ██║╚███╔███╔╝"
+    " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝"
+  )
+  local -a pinch_lines=(
+    "██████╗ ██╗███╗   ██╗ ██████╗██╗  ██╗"
+    "██╔══██╗██║████╗  ██║██╔════╝██║  ██║"
+    "██████╔╝██║██╔██╗ ██║██║     ███████║"
+    "██╔═══╝ ██║██║╚██╗██║██║     ██╔══██║"
+    "██║     ██║██║ ╚████║╚██████╗██║  ██║"
+    "╚═╝     ╚═╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝"
+  )
+
+  local -a red_grad=("$_CLR_BANNER_R1" "$_CLR_BANNER_R1" "$_CLR_BANNER_R2" "$_CLR_BANNER_R2" "$_CLR_BANNER_R3" "$_CLR_BANNER_R3")
+  local -a cyan_grad=("$_CLR_BANNER_C1" "$_CLR_BANNER_C1" "$_CLR_BANNER_C2" "$_CLR_BANNER_C2" "$_CLR_BANNER_C3" "$_CLR_BANNER_C3")
+
+  _print_box_empty
+
+  # CLAW lines (centered, appear with short delay)
+  local idx=0
+  for line in "${claw_lines[@]}"; do
+    _print_box_line "$line" "${red_grad[$idx]}"
+    idx=$(( idx + 1 ))
+    sleep 0.03
+  done
+
+  # PINCH lines (centered, appear with short delay)
+  idx=0
+  for line in "${pinch_lines[@]}"; do
+    _print_box_line "$line" "${cyan_grad[$idx]}"
+    idx=$(( idx + 1 ))
+    sleep 0.03
+  done
+
+  _print_box_empty
+
+  # Tagline
+  local tagline="Don't get pinched.  v1.2.1"
+  _print_box_line "$tagline" "$_CLR_DIM"
+
+  # Bottom border
+  printf "  ${_CLR_BOX}%s" "$_BOX_BL" >&2
+  _hline "$_BOX_H" $(( w - 4 )) "$_CLR_BOX" >&2
+  printf "%s${_CLR_RST}\n" "$_BOX_BR" >&2
+
+  # Show cursor
+  printf '\033[?25h' >&2
+  printf '\n' >&2
+}
+
 # ─── Spinner ───────────────────────────────────────────────────────────────
 
-# Start a braille spinner in the background.
-# Usage: start_spinner "Running config scanner..."
+# Start a braille spinner in the background with crab emoji and security tips.
+# Usage: start_spinner "Running config scanner..." [scanner_idx] [scanner_total]
 #   Sets global _SPINNER_PID
 start_spinner() {
   local msg="$1"
-  local frames="$_SPINNER_FRAMES"
-  local frame_count=${#frames}
+  local scanner_idx="${2:-}"
+  local scanner_total="${3:-}"
 
   # Don't spin if not a terminal or quiet mode
   if [[ ! -t 2 ]] || [[ "${QUIET:-0}" -eq 1 ]]; then
@@ -180,13 +383,52 @@ start_spinner() {
     return
   fi
 
+  local prefix=""
+  if [[ -n "$scanner_idx" ]] && [[ -n "$scanner_total" ]]; then
+    prefix="[${scanner_idx}/${scanner_total}] "
+  fi
+
   (
+    local frames="$_SPINNER_FRAMES"
+    local frame_count=${#frames}
     local i=0
+    local tip_idx=$(( RANDOM % ${#_TIPS[@]} ))
+    local last_tip_time="${EPOCHSECONDS:-$(date +%s)}"
+    local show_tip=0
+    local current_tip=""
+
     while true; do
-      # Extract single multibyte character via substring
-      # Braille chars are 3 bytes in UTF-8, but bash ${var:offset:1} works by char
       local frame="${frames:$i:1}"
-      printf '\r  %b%s%b %s' "$_CLR_SPINNER" "$frame" "$_CLR_RST" "$msg" >&2
+      local now="${EPOCHSECONDS:-$(date +%s)}"
+
+      # Rotate tip every 3 seconds
+      if (( now - last_tip_time >= 3 )); then
+        tip_idx=$(( (tip_idx + 1) % ${#_TIPS[@]} ))
+        last_tip_time=$now
+        show_tip=1
+        current_tip="${_TIPS[$tip_idx]}"
+      fi
+
+      local crab=""
+      if [[ "$_CLAWPINCH_HAS_EMOJI" -eq 1 ]]; then
+        crab="🦀 "
+      fi
+
+      if [[ "$show_tip" -eq 1 ]] && [[ -n "$current_tip" ]]; then
+        local tip_prefix=""
+        if [[ "$_CLAWPINCH_HAS_EMOJI" -eq 1 ]]; then
+          tip_prefix="💡 "
+        fi
+        printf '\r\033[K  %b%s%b %s%s%s  %b%s%s%b' \
+          "$_CLR_SPINNER" "$frame" "$_CLR_RST" \
+          "$crab" "$prefix" "$msg" \
+          "$_CLR_DIM" "$tip_prefix" "$current_tip" "$_CLR_RST" >&2
+      else
+        printf '\r\033[K  %b%s%b %s%s%s' \
+          "$_CLR_SPINNER" "$frame" "$_CLR_RST" \
+          "$crab" "$prefix" "$msg" >&2
+      fi
+
       i=$(( (i + 1) % frame_count ))
       sleep 0.08
     done
@@ -606,6 +848,66 @@ print_summary() {
   printf "%s%b\n" "$_HBOX_BR" "$_CLR_RST"
 
   printf '\n'
+}
+
+# ─── Init message (typewriter effect) ────────────────────────────────────
+
+print_init_message() {
+  if [[ ! -t 2 ]] || [[ "${QUIET:-0}" -eq 1 ]]; then return; fi
+
+  local msg="${_INIT_MSGS[$(( RANDOM % ${#_INIT_MSGS[@]} ))]}"
+
+  printf '  ' >&2
+  local i
+  for (( i=0; i<${#msg}; i++ )); do
+    printf '%b%s%b' "$_CLR_DIM" "${msg:$i:1}" "$_CLR_RST" >&2
+    sleep 0.02
+  done
+  printf '\n\n' >&2
+}
+
+# ─── Section transition (animated separator) ─────────────────────────────
+
+print_section_transition() {
+  if [[ ! -t 2 ]] || [[ "${QUIET:-0}" -eq 1 ]]; then return; fi
+  # Brief visual pause between sections
+  sleep 0.05
+}
+
+# ─── Summary count-up animation ──────────────────────────────────────────
+
+print_summary_animated() {
+  local critical="$1" warn="$2" info="$3" ok="$4"
+  local scanner_count="$5" elapsed="$6"
+
+  # Just render the final summary — no cursor-rewriting animation
+  print_summary "$critical" "$warn" "$info" "$ok" "$scanner_count" "$elapsed"
+}
+
+# ─── Completion message ──────────────────────────────────────────────────
+
+print_completion_message() {
+  local critical="$1" warn="$2"
+
+  if [[ ! -t 2 ]] || [[ "${QUIET:-0}" -eq 1 ]]; then return; fi
+
+  local crab=""
+  [[ "$_CLAWPINCH_HAS_EMOJI" -eq 1 ]] && crab="🦀 "
+
+  local msg
+  if (( critical == 0 && warn == 0 )); then
+    msg="${crab}All clear! No crabs here."
+    printf '  %b%s%b\n\n' "$_CLR_OK" "$msg" "$_CLR_RST" >&2
+  elif (( critical == 0 )); then
+    msg="${crab}Looking good — just $warn warnings to review."
+    printf '  %b%s%b\n\n' "$_CLR_WARN" "$msg" "$_CLR_RST" >&2
+  elif (( critical <= 5 )); then
+    msg="${crab}Watch out! $critical critical findings need attention."
+    printf '  %b%s%b\n\n' "$_CLR_CRIT" "$msg" "$_CLR_RST" >&2
+  else
+    msg="${crab}Ouch! $critical critical findings detected. Time to patch up."
+    printf '  %b%s%b\n\n' "$_CLR_CRIT" "$msg" "$_CLR_RST" >&2
+  fi
 }
 
 # ─── Aligned table ───────────────────────────────────────────────────────────

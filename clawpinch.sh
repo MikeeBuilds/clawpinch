@@ -15,6 +15,10 @@ source "$HELPERS_DIR/report.sh"
 source "$HELPERS_DIR/redact.sh"
 source "$HELPERS_DIR/interactive.sh"
 
+# ─── Signal trap for animation cleanup ──────────────────────────────────────
+
+trap '_cleanup_animation; exit 130' INT TERM
+
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
 DEEP=0
@@ -67,7 +71,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)    usage ;;
     -v|--version)
       node -e "console.log('clawpinch v' + require('$CLAWPINCH_DIR/package.json').version)" 2>/dev/null \
-        || echo "clawpinch v1.2.0"
+        || echo "clawpinch v1.2.1"
       exit 0 ;;
     *)
       log_error "Unknown option: $1"
@@ -97,7 +101,7 @@ export OPENCLAW_CONFIG
 # ─── Banner ──────────────────────────────────────────────────────────────────
 
 if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
-  print_header
+  print_header_animated
   log_info "OS detected: $CLAWPINCH_OS"
   if [[ -n "$OPENCLAW_CONFIG" ]]; then
     log_info "OpenClaw config: $OPENCLAW_CONFIG"
@@ -108,6 +112,7 @@ if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
     log_info "Deep scan enabled"
   fi
   printf '\n'
+  print_init_message
 fi
 
 # ─── Discover scanner scripts ───────────────────────────────────────────────
@@ -159,7 +164,7 @@ for scanner in "${scanners[@]}"; do
     local_category="$(_scanner_category "$scanner_name")"
     local_icon="${local_category%%|*}"
     local_name="${local_category##*|}"
-    start_spinner "Running ${local_name} scanner..."
+    start_spinner "Running ${local_name} scanner..." "$scanner_idx" "$scanner_count"
   fi
 
   # Determine how to run the scanner
@@ -261,8 +266,11 @@ else
     fi
   fi
 
-  # Always print summary dashboard
-  print_summary "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed"
+  # Always print summary dashboard (animated when TTY)
+  print_summary_animated "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed"
+
+  # Contextual completion message
+  print_completion_message "$count_critical" "$count_warn"
 
   # Launch interactive menu if TTY and not disabled
   if [[ "$QUIET" -eq 0 ]] && [[ "$NO_INTERACTIVE" -eq 0 ]] && [[ -t 0 ]]; then
