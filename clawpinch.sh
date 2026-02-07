@@ -85,6 +85,34 @@ export CLAWPINCH_SHOW_FIX="$SHOW_FIX"
 export CLAWPINCH_CONFIG_DIR="$CONFIG_DIR"
 export QUIET
 
+# ─── Validate security config (early check for --remediate) ──────────────────
+# Fail fast with a clear setup message instead of per-command failures later.
+
+if [[ "$REMEDIATE" -eq 1 ]]; then
+  _sec_config_found=0
+
+  if [[ -n "${CLAWPINCH_SECURITY_CONFIG:-}" ]] && [[ -f "$CLAWPINCH_SECURITY_CONFIG" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$CLAWPINCH_DIR/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$HOME/.config/clawpinch/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  elif [[ -f "$HOME/.auto-claude-security.json" ]]; then
+    _sec_config_found=1
+  fi
+
+  if [[ "$_sec_config_found" -eq 0 ]]; then
+    log_error "Security config (.auto-claude-security.json) not found."
+    log_error "The --remediate flag requires a command allowlist to validate auto-fix commands."
+    log_error ""
+    log_error "Setup: copy the example config to a trusted location:"
+    log_error "  cp .auto-claude-security.json.example ~/.config/clawpinch/.auto-claude-security.json"
+    log_error ""
+    log_error "Or set CLAWPINCH_SECURITY_CONFIG to point to your config file."
+    exit 2
+  fi
+fi
+
 # ─── Detect OS ───────────────────────────────────────────────────────────────
 
 CLAWPINCH_OS="$(detect_os)"
@@ -295,10 +323,25 @@ else
       _non_ok_count="$(echo "$_non_ok_findings" | jq 'length')"
 
       if (( _non_ok_count > 0 )); then
-        log_info "Piping $_non_ok_count findings to Claude for remediation..."
-        echo "$_non_ok_findings" | "$_claude_bin" -p \
-          --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
-          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) Apply the auto_fix command if available, otherwise implement the remediation manually 3) Verify the fix. Work through findings in order (critical first). Be precise and minimal in your changes."
+        # Pre-validate auto_fix commands: strip any that fail the allowlist
+        # so the AI agent only receives pre-approved commands
+        _validated_findings_arr=()
+        while IFS= read -r _finding; do
+          _fix_cmd="$(echo "$_finding" | jq -r '.auto_fix // ""')"
+          if [[ -n "$_fix_cmd" ]] && ! validate_command "$_fix_cmd"; then
+            # Strip the disallowed auto_fix, keep finding for manual review
+            _finding="$(echo "$_finding" | jq -c '.auto_fix = "" | .remediation = (.remediation + " [auto_fix removed: command not in allowlist]")')"
+            log_warn "Stripped disallowed auto_fix from finding $(echo "$_finding" | jq -r '.id')"
+          fi
+          _validated_findings_arr+=("$_finding")
+        done < <(echo "$_non_ok_findings" | jq -c '.[]')
+        _validated_findings="$(printf '%s\n' "${_validated_findings_arr[@]}" | jq -s '.')"
+
+        _validated_count="$(echo "$_validated_findings" | jq 'length')"
+        log_info "Piping $_validated_count findings to Claude for remediation..."
+        echo "$_validated_findings" | "$_claude_bin" -p \
+          --allowedTools "Read,Write,Edit,Glob,Grep" \
+          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) If an auto_fix field is present, it contains a pre-validated shell command — DO NOT execute it directly. Instead, translate its intent into equivalent Read/Write/Edit operations. For example: a 'sed -i s/old/new/ file' becomes an Edit tool call; a 'jq .key=val file.json > tmp && mv tmp file.json' becomes Read + Write; a 'chmod 600 file' should be noted for manual action. 3) If no auto_fix, implement the remediation manually using Write/Edit 4) Verify the fix by reading the file. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: You do NOT have access to Bash. Use only Read, Write, Edit, Glob, and Grep tools."
       else
         log_info "No actionable findings for remediation."
       fi

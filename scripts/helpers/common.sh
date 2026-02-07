@@ -185,6 +185,189 @@ require_cmd() {
   fi
 }
 
+# ─── Command validation (allowlist) ─────────────────────────────────────────
+
+validate_command() {
+  # Usage: validate_command <command_string>
+  # Returns 0 if ALL commands in the string are in allowlist, 1 otherwise
+  local cmd_string="$1"
+
+  if [[ -z "$cmd_string" ]]; then
+    log_error "validate_command: empty command string"
+    return 1
+  fi
+
+  # Find security config file (trusted locations only)
+  # SECURITY: Do NOT search the project being scanned — an attacker could
+  # include a malicious .auto-claude-security.json in their repo to override
+  # the allowlist and bypass all command validation.
+  local security_file=""
+
+  # 1. Explicit env var override (highest priority)
+  if [[ -n "${CLAWPINCH_SECURITY_CONFIG:-}" ]] && [[ -f "$CLAWPINCH_SECURITY_CONFIG" ]]; then
+    security_file="$CLAWPINCH_SECURITY_CONFIG"
+  fi
+
+  # 2. ClawPinch installation directory (next to clawpinch.sh)
+  if [[ -z "$security_file" ]]; then
+    local install_dir
+    install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    if [[ -f "$install_dir/.auto-claude-security.json" ]]; then
+      security_file="$install_dir/.auto-claude-security.json"
+    fi
+  fi
+
+  # 3. User config directory (~/.config/clawpinch/)
+  if [[ -z "$security_file" ]]; then
+    if [[ -f "$HOME/.config/clawpinch/.auto-claude-security.json" ]]; then
+      security_file="$HOME/.config/clawpinch/.auto-claude-security.json"
+    fi
+  fi
+
+  # 4. Home directory fallback
+  if [[ -z "$security_file" ]]; then
+    if [[ -f "$HOME/.auto-claude-security.json" ]]; then
+      security_file="$HOME/.auto-claude-security.json"
+    fi
+  fi
+
+  if [[ -z "$security_file" ]]; then
+    log_error "validate_command: .auto-claude-security.json not found. Searched: \$CLAWPINCH_SECURITY_CONFIG, <install-dir>/, ~/.config/clawpinch/, ~/. See .auto-claude-security.json.example for setup."
+    return 1
+  fi
+
+  # SECURITY: Validate config file ownership and permissions to prevent
+  # symlink attacks where an attacker replaces the config with a symlink
+  # to a file they control, overriding the allowlist.
+  local resolved_file
+  resolved_file="$(readlink -f "$security_file" 2>/dev/null || realpath "$security_file" 2>/dev/null || echo "$security_file")"
+
+  # Check file is owned by current user or root
+  local file_owner
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    file_owner="$(stat -f '%u' "$resolved_file" 2>/dev/null)" || file_owner=""
+  else
+    file_owner="$(stat -c '%u' "$resolved_file" 2>/dev/null)" || file_owner=""
+  fi
+
+  if [[ -n "$file_owner" ]]; then
+    local current_uid
+    current_uid="$(id -u)"
+    if [[ "$file_owner" != "$current_uid" ]] && [[ "$file_owner" != "0" ]]; then
+      log_error "validate_command: security config '$resolved_file' is owned by uid $file_owner (expected $current_uid or root). Possible symlink attack."
+      return 1
+    fi
+  fi
+
+  # Check file is not world-writable
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    local file_perms
+    file_perms="$(stat -f '%Lp' "$resolved_file" 2>/dev/null)" || file_perms=""
+    if [[ -n "$file_perms" ]] && [[ "${file_perms: -1}" =~ [2367] ]]; then
+      log_error "validate_command: security config '$resolved_file' is world-writable (mode $file_perms). Fix with: chmod o-w '$resolved_file'"
+      return 1
+    fi
+  else
+    if stat -c '%a' "$resolved_file" 2>/dev/null | grep -q '[2367]$'; then
+      log_error "validate_command: security config '$resolved_file' is world-writable. Fix with: chmod o-w '$resolved_file'"
+      return 1
+    fi
+  fi
+
+  # Check if jq is available
+  if ! has_cmd jq; then
+    log_error "validate_command: jq is required but not installed"
+    return 1
+  fi
+
+  # Validate the security config is valid JSON first
+  if ! jq '.' "$security_file" >/dev/null 2>&1; then
+    log_error "validate_command: $security_file is not valid JSON"
+    return 1
+  fi
+
+  # Get all allowed commands from security config
+  local allowed_commands
+  allowed_commands="$(jq -r '
+    (.base_commands // []) +
+    (.stack_commands // []) +
+    (.script_commands // []) +
+    (.custom_commands // []) |
+    .[]
+  ' "$security_file" 2>/dev/null)"
+
+  if [[ -z "$allowed_commands" ]]; then
+    log_warn "validate_command: allowlist is empty in $security_file — no commands are permitted"
+    return 1
+  fi
+
+  # Extract ALL commands from the string (split by |, &&, ||, ;)
+  # This ensures we validate every command in a chain
+  # Try to use Python script for proper quote-aware parsing
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local parse_script="$script_dir/parse_commands.py"
+
+  # Require Python parser — fail closed if unavailable (no insecure fallback)
+  if ! [[ -f "$parse_script" ]] || ! has_cmd python3; then
+    log_error "validate_command: python3 or parse_commands.py not available. Cannot securely validate command."
+    return 1
+  fi
+
+  local base_commands_list
+  base_commands_list="$(python3 "$parse_script" "$cmd_string")"
+  if [[ $? -ne 0 || -z "$base_commands_list" ]]; then
+    log_error "validate_command: Python helper failed to parse command string."
+    return 1
+  fi
+
+  # Check each base command
+  while IFS= read -r base_cmd; do
+    # Skip empty lines
+    [[ -z "$base_cmd" ]] && continue
+
+    # Skip flags/options (start with -)
+    [[ "$base_cmd" =~ ^- ]] && continue
+
+    # Strip surrounding quotes from command token before validation
+    # (shlex may return quoted tokens like "'cmd'" — strip to get bare command)
+    base_cmd="${base_cmd#\'}"
+    base_cmd="${base_cmd%\'}"
+    base_cmd="${base_cmd#\"}"
+    base_cmd="${base_cmd%\"}"
+    [[ -z "$base_cmd" ]] && continue
+
+    # Block interpreters with command execution flags (-c, -e)
+    # e.g., "bash -c 'rm -rf /'" — bash is in allowlist but -c allows arbitrary code
+    case "$base_cmd" in
+      bash|sh|zsh|python|python3|perl|ruby|node)
+        if [[ "$cmd_string" =~ [[:space:]]-[ce][[:space:]] ]] || [[ "$cmd_string" =~ [[:space:]]-[ce]$ ]]; then
+          log_error "validate_command: interpreter '$base_cmd' with -c or -e flag is not allowed"
+          return 1
+        fi
+        ;;
+    esac
+
+    # Check allowlist first (allows script_commands like ./clawpinch.sh)
+    if grep -Fxq -- "$base_cmd" <<< "$allowed_commands"; then
+      continue
+    fi
+
+    # Block path-based commands not in allowlist (/bin/rm, ./malicious, ~/script)
+    if [[ "$base_cmd" =~ ^[/~\.] ]]; then
+      log_error "validate_command: path-based command '$base_cmd' is not in the allowlist"
+      return 1
+    fi
+
+    # Command not in allowlist
+    log_error "validate_command: '$base_cmd' is not in the allowlist"
+    return 1
+  done <<< "$base_commands_list"
+
+  # All commands validated successfully
+  return 0
+}
+
 # ─── OS detection ───────────────────────────────────────────────────────────
 
 detect_os() {
