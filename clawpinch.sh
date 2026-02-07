@@ -141,10 +141,9 @@ run_scanners_parallel() {
       if [[ "$scanner" == *.sh ]]; then
         bash "$scanner" > "$temp_file" 2>/dev/null || true
       elif [[ "$scanner" == *.py ]]; then
+        # Python 3 only — scanners use f-strings and type hints that fail under Python 2
         if command -v python3 &>/dev/null; then
           python3 "$scanner" > "$temp_file" 2>/dev/null || true
-        elif command -v python &>/dev/null; then
-          python "$scanner" > "$temp_file" 2>/dev/null || true
         fi
       fi
     ) &
@@ -157,18 +156,13 @@ run_scanners_parallel() {
     wait "$pid" 2>/dev/null || true
   done
 
-  # Merge all JSON outputs
-  ALL_FINDINGS="[]"
-  for temp_file in "$temp_dir"/*.json; do
-    if [[ -f "$temp_file" ]]; then
-      output="$(cat "$temp_file")"
-      if [[ -n "$output" ]]; then
-        if echo "$output" | jq -e 'type == "array"' >/dev/null 2>&1; then
-          ALL_FINDINGS="$(echo "$ALL_FINDINGS" "$output" | jq -s '.[0] + .[1]')"
-        fi
-      fi
-    fi
-  done
+  # Merge all JSON outputs in a single jq command (avoids N jq calls in a loop)
+  local json_files=("$temp_dir"/*.json)
+  if [[ -e "${json_files[0]}" ]]; then
+    ALL_FINDINGS="$(jq -s 'add' "${json_files[@]}" 2>/dev/null)" || ALL_FINDINGS="[]"
+  else
+    ALL_FINDINGS="[]"
+  fi
 
   # Temp directory cleaned up by EXIT trap
 }
