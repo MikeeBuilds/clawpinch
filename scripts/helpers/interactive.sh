@@ -5,6 +5,10 @@ set -euo pipefail
 # Post-scan interactive menu: review findings, auto-fix, export handoff doc.
 # Sourced by clawpinch.sh — depends on common.sh & report.sh being loaded first.
 
+# Source safe command execution module
+# shellcheck source=safe_exec.sh
+source "$(dirname "${BASH_SOURCE[0]}")/safe_exec.sh"
+
 # ─── Table box-drawing constants ─────────────────────────────────────────────
 
 readonly _TBL_TL='┌' _TBL_TR='┐' _TBL_BL='└' _TBL_BR='┘'
@@ -39,7 +43,7 @@ _confirm() {
 _run_fix() {
   local cmd="$1"
   printf '\n  %b$%b %s\n' "$_CLR_DIM" "$_CLR_RST" "$cmd"
-  if eval "$cmd" 2>&1 | while IFS= read -r line; do printf '  %s\n' "$line"; done; then
+  if safe_exec_command "$cmd" 2>&1 | while IFS= read -r line; do printf '  %s\n' "$line"; done; then
     printf '  %b✓ Fix applied successfully%b\n' "$_CLR_OK" "$_CLR_RST"
     return 0
   else
@@ -558,7 +562,7 @@ auto_fix_all() {
     f_id="$(echo "$fixable" | jq -r ".[$i].id")"
     f_cmd="$(echo "$fixable" | jq -r ".[$i].auto_fix")"
     printf '  [%d/%d] %s ... ' $(( i + 1 )) "$fix_count" "$f_id"
-    if eval "$f_cmd" >/dev/null 2>&1; then
+    if safe_exec_command "$f_cmd" >/dev/null 2>&1; then
       printf '%b✓ pass%b\n' "$_CLR_OK" "$_CLR_RST"
       passed=$(( passed + 1 ))
     else
