@@ -25,14 +25,22 @@ def _check_dangerous_outside_single_quotes(cmd_string):
 
     Single quotes in shell prevent all expansion, so $() inside single
     quotes is literal text (e.g. sed 's/$(pwd)/path/g' is safe).
+    Handles backslash escapes (\' does NOT start a quoted region) and
+    shell-style escaped single quotes ('can'\''t').
     Returns True if a dangerous pattern is found outside single quotes.
     """
     in_single = False
     i = 0
     while i < len(cmd_string):
         c = cmd_string[i]
+
+        # Handle backslash escape outside single quotes
+        # (backslash has no special meaning inside single quotes in shell)
+        if c == "\\" and not in_single and i + 1 < len(cmd_string):
+            i += 2  # skip escaped character entirely
+            continue
+
         if c == "'" and not in_single:
-            # Entering single-quoted region — skip to closing quote
             in_single = True
             i += 1
             continue
@@ -42,7 +50,6 @@ def _check_dangerous_outside_single_quotes(cmd_string):
             continue
 
         if not in_single:
-            # Check if a dangerous pattern starts at this position
             remaining = cmd_string[i:]
             if _DANGEROUS_RE.match(remaining):
                 return True

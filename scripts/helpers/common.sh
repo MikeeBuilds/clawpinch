@@ -208,25 +208,36 @@ validate_command() {
     # Skip flags/options (start with -)
     [[ "$base_cmd" =~ ^- ]] && continue
 
-    # Skip quoted strings (they're arguments, not commands)
-    [[ "$base_cmd" =~ ^[\'\"] ]] && continue
+    # Strip surrounding quotes from command token before validation
+    # (shlex may return quoted tokens like "'cmd'" — strip to get bare command)
+    base_cmd="${base_cmd#\'}"
+    base_cmd="${base_cmd%\'}"
+    base_cmd="${base_cmd#\"}"
+    base_cmd="${base_cmd%\"}"
+    [[ -z "$base_cmd" ]] && continue
 
-    # Block path-based commands (/bin/rm, ./malicious, ~/script) — prevents allowlist bypass
-    if [[ "$base_cmd" =~ ^[/~\.] ]]; then
-      log_error "validate_command: path-based command '$base_cmd' is not allowed (use bare command names)"
-      return 1
-    fi
-
-    # Skip redirection operators
+    # Block redirection operators — these can write/overwrite arbitrary files
     case "$base_cmd" in
-      '>'|'>>'|'<'|'2>'|'&>'|'2>&1') continue ;;
+      '>'|'>>'|'<'|'2>'|'&>'|'2>&1')
+        log_error "validate_command: redirection operator '$base_cmd' is not allowed in auto-fix commands"
+        return 1
+        ;;
     esac
 
-    # Check if this command is in the allowlist (exact match)
-    if ! grep -Fxq -- "$base_cmd" <<< "$allowed_commands"; then
-      log_error "validate_command: '$base_cmd' is not in the allowlist"
+    # Check allowlist first (allows script_commands like ./clawpinch.sh)
+    if grep -Fxq -- "$base_cmd" <<< "$allowed_commands"; then
+      continue
+    fi
+
+    # Block path-based commands not in allowlist (/bin/rm, ./malicious, ~/script)
+    if [[ "$base_cmd" =~ ^[/~\.] ]]; then
+      log_error "validate_command: path-based command '$base_cmd' is not in the allowlist"
       return 1
     fi
+
+    # Command not in allowlist
+    log_error "validate_command: '$base_cmd' is not in the allowlist"
+    return 1
   done <<< "$base_commands_list"
 
   # All commands validated successfully

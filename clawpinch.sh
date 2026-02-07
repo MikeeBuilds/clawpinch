@@ -289,23 +289,23 @@ else
       if (( _non_ok_count > 0 )); then
         # Pre-validate auto_fix commands: strip any that fail the allowlist
         # so the AI agent only receives pre-approved commands
-        _validated_findings="[]"
-        for _idx in $(seq 0 $(( _non_ok_count - 1 ))); do
-          _finding="$(echo "$_non_ok_findings" | jq -c ".[$_idx]")"
+        _validated_findings_arr=()
+        while IFS= read -r _finding; do
           _fix_cmd="$(echo "$_finding" | jq -r '.auto_fix // ""')"
-          if [[ -n "$_fix_cmd" ]] && ! validate_command "$_fix_cmd" 2>/dev/null; then
+          if [[ -n "$_fix_cmd" ]] && ! validate_command "$_fix_cmd"; then
             # Strip the disallowed auto_fix, keep finding for manual review
             _finding="$(echo "$_finding" | jq -c '.auto_fix = "" | .remediation = (.remediation + " [auto_fix removed: command not in allowlist]")')"
             log_warn "Stripped disallowed auto_fix from finding $(echo "$_finding" | jq -r '.id')"
           fi
-          _validated_findings="$(echo "$_validated_findings" "[$_finding]" | jq -s '.[0] + .[1]')"
-        done
+          _validated_findings_arr+=("$_finding")
+        done < <(echo "$_non_ok_findings" | jq -c '.[]')
+        _validated_findings="$(IFS=,; echo "[${_validated_findings_arr[*]}]")"
 
         _validated_count="$(echo "$_validated_findings" | jq 'length')"
         log_info "Piping $_validated_count findings to Claude for remediation..."
         echo "$_validated_findings" | "$_claude_bin" -p \
           --allowedTools "Read,Write,Edit,Glob,Grep" \
-          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) If auto_fix is provided, apply the fix using the Write or Edit tool (do NOT use Bash) 3) If no auto_fix, implement the remediation manually using Write/Edit 4) Verify the fix by reading the file. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: Do not execute shell commands. Use only Read, Write, Edit, Glob, and Grep tools."
+          "You are a security remediation agent. You have been given ClawPinch security scan findings as JSON. For each finding: 1) Read the evidence to understand the issue 2) If an auto_fix field is present, it contains a pre-validated shell command — translate its intent into equivalent Read/Write/Edit operations (e.g. a sed command becomes an Edit, a jq+mv becomes Read+Write) 3) If no auto_fix, implement the remediation manually using Write/Edit 4) Verify the fix by reading the file. Work through findings in order (critical first). Be precise and minimal in your changes. IMPORTANT: Do not execute shell commands. Use only Read, Write, Edit, Glob, and Grep tools."
       else
         log_info "No actionable findings for remediation."
       fi
