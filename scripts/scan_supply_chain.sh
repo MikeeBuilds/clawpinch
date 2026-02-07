@@ -24,7 +24,13 @@ EXTENSIONS_DIR="${OPENCLAW_EXTENSIONS_DIR:-$HOME/.openclaw/extensions}"
 # ─── Load malicious patterns database ───────────────────────────────────────
 
 load_malicious_packages() {
-  if [[ -f "$PATTERNS_FILE" ]] && has_cmd jq; then
+  # Verify JSON integrity before using
+  if [[ -f "$PATTERNS_FILE" ]] && ! verify_json_integrity "$PATTERNS_FILE"; then  # malicious-patterns.json
+    log_error "Integrity verification failed for malicious-patterns.json -- using built-in patterns only"
+    # Use hardcoded fallback
+    printf '%s\n' clawhub-cli clawdhub openclaw-helper openclaw-utils \
+      phantom-wallet-skill solana-pay-pro
+  elif [[ -f "$PATTERNS_FILE" ]] && has_cmd jq; then
     jq -r '.known_malicious_packages[]' "$PATTERNS_FILE" 2>/dev/null
   else
     # Hardcoded fallback
