@@ -263,6 +263,99 @@ bash clawpinch.sh --fail-on CHK-CFG-001,CHK-SEC-002,CHK-NET-005
 - Make specific checks mandatory for compliance
 - Gradually tighten security gates over time
 
+---
+
+## Practical Examples
+
+### Example 1: Critical-Only Gate for Production
+
+Block deployments only on critical vulnerabilities, allowing warnings to pass through:
+
+```bash
+# Scan and fail only on critical findings
+bash clawpinch.sh --severity-threshold critical --json
+
+# Exit codes:
+# 0 = no critical findings (deployment proceeds even with warnings)
+# 1 = critical findings detected (deployment blocked)
+# 3 = scan error (deployment blocked)
+```
+
+**Workflow:**
+1. Run scan with `--severity-threshold critical`
+2. If exit code = 0, deploy to production
+3. If exit code = 1, block deployment and alert security team
+4. Warnings/info findings are logged but don't block deployment
+
+**Use case:** Production deployments where you want to move fast but block on serious vulnerabilities.
+
+---
+
+### Example 2: Enforce Specific Checks
+
+Make specific security checks mandatory regardless of severity:
+
+```bash
+# Always fail if auth is disabled or secrets are exposed
+bash clawpinch.sh --fail-on CHK-CFG-001,CHK-SEC-003,CHK-SEC-004
+
+# Combine with severity threshold for layered security
+bash clawpinch.sh --severity-threshold warn --fail-on CHK-CFG-001
+```
+
+**Workflow:**
+1. Identify your organization's mandatory checks (e.g., auth, secrets, TLS)
+2. Add them to `--fail-on` in your CI pipeline
+3. Even if a check is downgraded to `info`, it still blocks deployment
+4. Gradually expand the mandatory check list over time
+
+**Use case:** Enforce compliance requirements or organization-specific security policies.
+
+---
+
+### Example 3: Progressive Adoption Pattern
+
+Start with loose gates and tighten over time to avoid disruption:
+
+**Phase 1: Discovery (Week 1-2)**
+```bash
+# Audit mode -- scan but don't fail builds
+bash clawpinch.sh --json || true
+```
+Run scans in CI but ignore exit codes. Review findings and prioritize fixes.
+
+**Phase 2: Critical-Only Gate (Week 3-4)**
+```bash
+# Fail only on critical findings
+bash clawpinch.sh --severity-threshold critical --json
+```
+Fix critical vulnerabilities. Warnings are visible but don't block.
+
+**Phase 3: Add Mandatory Checks (Month 2)**
+```bash
+# Critical gate + enforce specific checks
+bash clawpinch.sh --severity-threshold critical --fail-on CHK-CFG-001,CHK-SEC-003
+```
+Add organization-specific mandatory checks (auth, secrets, etc.).
+
+**Phase 4: Tighten to Warnings (Month 3+)**
+```bash
+# Fail on warnings or critical
+bash clawpinch.sh --severity-threshold warn --json
+```
+Once critical/mandatory checks are clean, tighten to include warnings.
+
+**Phase 5: Full Enforcement (Month 6+)**
+```bash
+# Fail on any findings
+bash clawpinch.sh --severity-threshold info --json
+```
+Enforce all best practices including informational findings.
+
+**Use case:** Adopt ClawPinch without disrupting existing workflows. Progressive tightening builds security culture.
+
+---
+
 ### CI/CD Integration Examples
 
 **GitHub Actions:**
