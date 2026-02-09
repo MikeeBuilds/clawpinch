@@ -42,11 +42,11 @@ fi
 # ---------------------------------------------------------------------------
 FINDINGS=()
 
-# Reference files to check
-REFERENCE_FILES=(
-    "$REFERENCES_DIR/known-cves.json"
-    "$REFERENCES_DIR/malicious-patterns.json"
-)
+# Dynamically discover reference files by finding all .json.sha256 checksum files
+REFERENCE_FILES=()
+while IFS= read -r -d '' file; do
+  REFERENCE_FILES+=("${file%.sha256}")
+done < <(find "$REFERENCES_DIR" -maxdepth 1 -name "*.json.sha256" -type f -print0 | sort -z)
 
 # ---------------------------------------------------------------------------
 # CHK-INT-001: Verify integrity of reference JSON files
@@ -93,13 +93,16 @@ if [[ $integrity_failed -eq 1 ]]; then
         ""
     )")
 else
-    # OK: all integrity checks passed
+    # OK: all integrity checks passed — build evidence string dynamically
+    basenames=()
+    for f in "${REFERENCE_FILES[@]}"; do basenames+=("$(basename "$f")"); done
+    evidence_str="$(IFS=', '; echo "${basenames[*]}")"
     FINDINGS+=("$(emit_finding \
         "CHK-INT-001" \
         "ok" \
         "Reference data integrity verified" \
-        "All reference JSON files (known-cves.json, malicious-patterns.json) passed SHA256 integrity verification. No tampering detected." \
-        "Verified: known-cves.json, malicious-patterns.json" \
+        "All reference JSON files passed SHA256 integrity verification. No tampering detected." \
+        "Verified: ${evidence_str:-none}" \
         "No action needed" \
         ""
     )")

@@ -73,9 +73,10 @@ for json_file in "${JSON_FILES[@]}"; do
 
   log_info "Processing: $json_basename"
 
-  # Compute hash
-  if ! hash_output=$($HASH_CMD "$json_file" 2>&1); then
-    log_error "Failed to compute hash for $json_basename: $hash_output"
+  # Compute hash — redirect stderr separately so error messages aren't captured as hash
+  hash_output="$($HASH_CMD "$json_file" 2>/dev/null)"
+  if [[ $? -ne 0 ]] || [[ -z "$hash_output" ]]; then
+    log_error "Failed to compute hash for $json_basename"
     ((FAIL_COUNT++))
     continue
   fi
