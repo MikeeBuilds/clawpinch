@@ -361,8 +361,8 @@ SUPPRESSED_FINDINGS="[]"
 if [[ "$NO_IGNORE" -eq 0 ]]; then
   # Look for .clawpinch-ignore.json in the OpenClaw config directory or current directory
   ignore_file=".clawpinch-ignore.json"
-  if [[ -n "$OPENCLAW_CONFIG" ]] && [[ -f "$OPENCLAW_CONFIG/.clawpinch-ignore.json" ]]; then
-    ignore_file="$OPENCLAW_CONFIG/.clawpinch-ignore.json"
+  if [[ -n "$OPENCLAW_CONFIG" ]] && [[ -f "$(dirname "$OPENCLAW_CONFIG")/.clawpinch-ignore.json" ]]; then
+    ignore_file="$(dirname "$OPENCLAW_CONFIG")/.clawpinch-ignore.json"
   fi
 
   # Filter findings into active and suppressed
@@ -378,7 +378,7 @@ DISPLAY_FINDINGS="$ACTIVE_FINDINGS"
 if [[ "$SHOW_SUPPRESSED" -eq 1 ]]; then
   # Mark suppressed findings with a "suppressed": true field before merging
   MARKED_SUPPRESSED="$(echo "$SUPPRESSED_FINDINGS" | jq '[.[] | . + {suppressed: true}]')"
-  DISPLAY_FINDINGS="$(echo "$ACTIVE_FINDINGS" "$MARKED_SUPPRESSED" | jq -s '.[0] + .[1] | sort_by(.severity | if . == "critical" then 0 elif . == "warn" then 1 elif . == "info" then 2 elif . == "ok" then 3 else 4 end)')"
+  DISPLAY_FINDINGS="$(echo "$ACTIVE_FINDINGS" "$MARKED_SUPPRESSED" | jq -s 'def sev_order: if . == "critical" then 0 elif . == "warn" then 1 elif . == "info" then 2 elif . == "ok" then 3 else 4 end; .[0] + .[1] | sort_by(.severity | sev_order)')"
 fi
 
 # ─── Count by severity ──────────────────────────────────────────────────────

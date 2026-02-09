@@ -77,11 +77,7 @@ is_suppressed() {
   # Get current timestamp in ISO 8601 format for expiration checking
   local now
   if command -v date &>/dev/null; then
-    # Try to get ISO 8601 timestamp (works on GNU date and macOS date)
-    if date -u +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
-      now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    else
-      # Fallback if date format fails
+    if ! now="$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
       now=""
     fi
   else
@@ -143,8 +139,10 @@ filter_findings() {
 
   # Get current timestamp
   local now
-  if command -v date &>/dev/null && date -u +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
-    now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  if command -v date &>/dev/null; then
+    if ! now="$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"; then
+      now=""
+    fi
   else
     now=""
   fi
@@ -156,53 +154,33 @@ filter_findings() {
   # Use jq to split findings into active and suppressed
   if [[ -n "$now" ]]; then
     # With expiration checking
-    echo "$findings" | jq -c --argjson suppressions "$_CLAWPINCH_SUPPRESSIONS" --arg now "$now" '{
-      active: map(
-        . as $finding |
-        ($suppressions | map(select(.id == $finding.id)) | .[0]) as $suppression |
-        if $suppression then
-          if $suppression.expires then
-            if $suppression.expires <= $now then $finding else empty end
+    echo "$findings" | jq -c --argjson suppressions "$_CLAWPINCH_SUPPRESSIONS" --arg now "$now" '
+      ($suppressions | map({(.id): .}) | add // {}) as $smap |
+      reduce .[] as $f ({active: [], suppressed: []};
+        $smap[$f.id] as $s |
+        if $s then
+          if $s.expires and $s.expires <= $now then
+            .active += [$f]
           else
-            empty
+            .suppressed += [$f + {suppression: ($s | del(.id))}]
           end
         else
-          $finding
-        end
-      ),
-      suppressed: map(
-        . as $finding |
-        ($suppressions | map(select(.id == $finding.id)) | .[0]) as $suppression |
-        if $suppression then
-          if $suppression.expires then
-            if $suppression.expires > $now then $finding else empty end
-          else
-            $finding
-          end
-        else
-          empty
+          .active += [$f]
         end
       )
-    }'
+    '
   else
     # Without expiration checking (treat all as unexpired)
-    echo "$findings" | jq -c --argjson suppressions "$_CLAWPINCH_SUPPRESSIONS" '{
-      active: map(
-        . as $finding |
-        if ($suppressions | map(select(.id == $finding.id)) | length == 0) then
-          $finding
+    echo "$findings" | jq -c --argjson suppressions "$_CLAWPINCH_SUPPRESSIONS" '
+      ($suppressions | map({(.id): .}) | add // {}) as $smap |
+      reduce .[] as $f ({active: [], suppressed: []};
+        $smap[$f.id] as $s |
+        if $s then
+          .suppressed += [$f + {suppression: ($s | del(.id))}]
         else
-          empty
-        end
-      ),
-      suppressed: map(
-        . as $finding |
-        if ($suppressions | map(select(.id == $finding.id)) | length > 0) then
-          $finding
-        else
-          empty
+          .active += [$f]
         end
       )
-    }'
+    '
   fi
 }
