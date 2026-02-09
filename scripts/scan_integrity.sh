@@ -73,7 +73,7 @@ for json_file in "${REFERENCE_FILES[@]}"; do
     fi
 
     # Verify integrity using the helper function
-    if ! verify_json_integrity "$json_file" 2>/dev/null; then
+    if ! verify_json_integrity "$json_file"; then
         integrity_failed=1
         failed_files+=("$json_basename (checksum mismatch)")
     fi

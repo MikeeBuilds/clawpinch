@@ -470,8 +470,7 @@ verify_json_integrity() {
 
   # Read expected hash from .sha256 file (format: <hash>  <filename>)
   local expected_hash
-  expected_hash="$(awk '{print $1}' "$sha256_file" 2>/dev/null)"
-  if [[ -z "$expected_hash" ]]; then
+  if ! read -r expected_hash _ < "$sha256_file" || [[ -z "$expected_hash" ]]; then
     log_error "Failed to read checksum from $sha256_file"
     return 1
   fi

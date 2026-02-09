@@ -53,7 +53,7 @@ fi
 JSON_FILES=()
 while IFS= read -r -d '' file; do
   JSON_FILES+=("$file")
-done < <(find "$REFERENCES_DIR" -maxdepth 1 -name "*.json" -type f -print0 2>/dev/null | sort -z)
+done < <(find "$REFERENCES_DIR" -maxdepth 1 -name "*.json" -type f -print0 | sort -z)
 
 if [[ ${#JSON_FILES[@]} -eq 0 ]]; then
   log_warn "No JSON files found in $REFERENCES_DIR"
