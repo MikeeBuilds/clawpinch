@@ -27,6 +27,7 @@ SHOW_FIX=0
 QUIET=0
 NO_INTERACTIVE=0
 REMEDIATE=0
+PARALLEL_SCANNERS=1
 CONFIG_DIR=""
 
 # ─── Usage ───────────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ Options:
   --json            Output findings as JSON array only
   --fix             Show auto-fix commands in report
   --quiet           Print summary line only
+  --sequential      Run scanners sequentially (default is parallel)
   --no-interactive  Disable interactive post-scan menu
   --remediate       Run scan then pipe findings to Claude for AI remediation
   --config-dir PATH Explicit path to openclaw config directory
@@ -60,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --json)       JSON_OUTPUT=1; shift ;;
     --fix)        SHOW_FIX=1; shift ;;
     --quiet)      QUIET=1; shift ;;
+    --sequential) PARALLEL_SCANNERS=0; shift ;;
     --no-interactive) NO_INTERACTIVE=1; shift ;;
     --remediate)  REMEDIATE=1; NO_INTERACTIVE=1; shift ;;
     --config-dir)
@@ -143,6 +146,63 @@ if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
   print_init_message
 fi
 
+# ─── Parallel scanner execution function ────────────────────────────────────
+
+run_scanners_parallel() {
+  local temp_dir=""
+  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/clawpinch.XXXXXX")"
+
+  # Use RETURN trap for cleanup — fires when function returns, doesn't
+  # interfere with main script's own traps or Ctrl+C handling
+  trap 'rm -rf "$temp_dir"' RETURN
+
+  # Track background job PIDs
+  declare -a pids=()
+
+  # Launch all scanners in parallel
+  for scanner in "${scanners[@]}"; do
+    local scanner_name="$(basename "$scanner")"
+    local temp_file="$temp_dir/${scanner_name}.json"
+
+    # Run scanner in background, redirecting output to temp file
+    (
+      # Initialize with empty array in case scanner fails to run
+      echo '[]' > "$temp_file"
+
+      # Run scanner - exit code doesn't matter, we just need valid JSON output
+      # (Scanners exit with code 1 when they find critical findings, but still output valid JSON)
+      # Use command -v instead of has_cmd — bash functions aren't inherited by subshells
+      if [[ "$scanner" == *.sh ]]; then
+        bash "$scanner" > "$temp_file" 2>/dev/null || true
+      elif [[ "$scanner" == *.py ]]; then
+        # Python 3 only — scanners use f-strings and type hints that fail under Python 2
+        if command -v python3 &>/dev/null; then
+          python3 "$scanner" > "$temp_file" 2>/dev/null || true
+        else
+          echo "WARN: skipping $scanner_name (python3 not found)" >&2
+        fi
+      fi
+    ) &
+
+    pids+=("$!")
+  done
+
+  # Wait for all background jobs to complete
+  for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+
+  # Merge all JSON outputs in a single jq command (avoids N jq calls in a loop)
+  local json_files=("$temp_dir"/*.json)
+  if [[ -e "${json_files[0]}" ]]; then
+    ALL_FINDINGS="$(jq -s 'add' "${json_files[@]}" 2>/dev/null)" || ALL_FINDINGS="[]"
+  else
+    ALL_FINDINGS="[]"
+  fi
+
+  # Temp directory cleaned up by RETURN trap
+}
+
 # ─── Discover scanner scripts ───────────────────────────────────────────────
 
 scanners=()
@@ -176,7 +236,32 @@ _SPINNER_PID=""
 # Record scan start time
 _scan_start="${EPOCHSECONDS:-$(date +%s)}"
 
-for scanner in "${scanners[@]}"; do
+# ─── Execute scanners (parallel or sequential) ──────────────────────────────
+
+if [[ "$PARALLEL_SCANNERS" -eq 1 ]]; then
+  # Parallel execution
+  if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
+    start_spinner "Running ${scanner_count} scanners in parallel..."
+  fi
+
+  # Record parallel execution start time
+  _parallel_start="${EPOCHSECONDS:-$(date +%s)}"
+
+  run_scanners_parallel
+
+  # Calculate parallel execution elapsed time
+  _parallel_end="${EPOCHSECONDS:-$(date +%s)}"
+  _parallel_elapsed=$(( _parallel_end - _parallel_start ))
+
+  # Count findings from merged results
+  _parallel_count="$(echo "$ALL_FINDINGS" | jq 'length')"
+
+  if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
+    stop_spinner "Parallel scan" "$_parallel_count" "$_parallel_elapsed"
+  fi
+else
+  # Sequential execution
+  for scanner in "${scanners[@]}"; do
   scanner_idx=$((scanner_idx + 1))
   scanner_name="$(basename "$scanner")"
   scanner_base="${scanner_name%.*}"
@@ -233,7 +318,8 @@ for scanner in "${scanners[@]}"; do
   if [[ "$JSON_OUTPUT" -eq 0 ]] && [[ "$QUIET" -eq 0 ]]; then
     stop_spinner "$local_name" "$local_count" "$_scanner_elapsed"
   fi
-done
+  done
+fi
 
 # Calculate total scan time
 _scan_end="${EPOCHSECONDS:-$(date +%s)}"
