@@ -35,6 +35,7 @@ clawpinch/
 │   │   └── interactive.sh    # Post-scan menu: review, auto-fix, handoff export, AI remediation
 │   ├── scan_config.sh        # CHK-CFG-001..010 — gateway, TLS, auth, CORS
 │   ├── scan_secrets.py       # CHK-SEC-001..008 — API keys, passwords, tokens
+│   ├── scan_git_history.sh   # CHK-SEC-008 — secrets in git commit history
 │   ├── scan_network.sh       # CHK-NET-001..008 — ports, WebSocket, DNS rebinding
 │   ├── scan_skills.sh        # CHK-SKL-001..010 — permissions, signatures, eval
 │   ├── scan_permissions.sh   # CHK-PRM-001..008 — least-privilege, wildcards
