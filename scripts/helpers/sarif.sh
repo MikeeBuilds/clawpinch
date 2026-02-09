@@ -12,18 +12,6 @@ if [[ -z "${_CLAWPINCH_HAS_COLOR:-}" ]]; then
   source "$SCRIPT_DIR/common.sh"
 fi
 
-# ─── SARIF severity mapping ────────────────────────────────────────────────
-
-_sarif_level() {
-  case "$1" in
-    critical) echo "error" ;;
-    warn)     echo "warning" ;;
-    info)     echo "note" ;;
-    ok)       echo "none" ;;
-    *)        echo "note" ;;
-  esac
-}
-
 # ─── SARIF converter ──────────────────────────────────────────────────────
 # Usage: convert_to_sarif <findings_json>
 #   findings_json: JSON array of ClawPinch findings
@@ -71,7 +59,7 @@ convert_to_sarif() {
               "version": $tool_version,
               "informationUri": $tool_uri,
               "rules": (
-                . | map({
+                . | [.[] | select(.severity != "ok")] | map({
                   id: .id,
                   name: .title,
                   shortDescription: {
@@ -101,13 +89,12 @@ convert_to_sarif() {
             }
           },
           "results": (
-            . | map({
+            . | [.[] | select(.severity != "ok")] | map({
               "ruleId": .id,
               "level": (
                 if .severity == "critical" then "error"
                 elif .severity == "warn" then "warning"
                 elif .severity == "info" then "note"
-                elif .severity == "ok" then "none"
                 else "note"
                 end
               ),
@@ -121,6 +108,15 @@ convert_to_sarif() {
                   end
                 )
               },
+              "locations": [
+                {
+                  "physicalLocation": {
+                    "artifactLocation": {
+                      "uri": "."
+                    }
+                  }
+                }
+              ],
               "properties": {
                 "evidence": .evidence,
                 "auto_fix": .auto_fix
