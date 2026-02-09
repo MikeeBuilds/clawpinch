@@ -68,7 +68,16 @@ convert_to_sarif() {
                   fullDescription: {
                     text: .description
                   },
-                  helpUri: ($tool_uri + "#" + (.id | ascii_downcase)),
+                  helpUri: ($tool_uri + "/blob/main/references/check-catalog.md#" + (.id | ascii_downcase)),
+                  defaultConfiguration: {
+                    level: (
+                      if .severity == "critical" then "error"
+                      elif .severity == "warn" then "warning"
+                      elif .severity == "info" then "note"
+                      else "note"
+                      end
+                    )
+                  },
                   properties: {
                     category: (
                       if .id | startswith("CHK-CFG-") then "configuration"

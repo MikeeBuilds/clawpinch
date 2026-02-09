@@ -304,7 +304,7 @@ ClawPinch produces SARIF v2.1.0 output with the following structure:
             "shortDescription": {
               "text": "Gateway listening on 0.0.0.0"
             },
-            "helpUri": "https://github.com/MikeeBuilds/clawpinch#chk-cfg-001",
+            "helpUri": "https://github.com/MikeeBuilds/clawpinch/blob/main/references/check-catalog.md#chk-cfg-001",
             "defaultConfiguration": {
               "level": "error"
             }
