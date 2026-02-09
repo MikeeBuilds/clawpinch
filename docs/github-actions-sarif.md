@@ -150,7 +150,7 @@ By default, `continue-on-error: true` prevents failing the build. To enforce a s
     npx clawpinch --sarif --no-interactive > clawpinch.sarif
 
     # Check if any critical findings exist
-    if jq -e '.runs[0].results[] | select(.level == "error")' clawpinch.sarif > /dev/null; then
+    if jq -e '.runs[0]?.results[]? | select(.level == "error")' clawpinch.sarif > /dev/null; then
       echo "❌ Critical security findings detected"
       exit 1
     fi
@@ -295,7 +295,7 @@ ClawPinch produces SARIF v2.1.0 output with the following structure:
     "tool": {
       "driver": {
         "name": "ClawPinch",
-        "version": "1.2.0",
+        "version": "1.2.1",
         "informationUri": "https://github.com/MikeeBuilds/clawpinch",
         "rules": [
           {
@@ -304,7 +304,7 @@ ClawPinch produces SARIF v2.1.0 output with the following structure:
             "shortDescription": {
               "text": "Gateway listening on 0.0.0.0"
             },
-            "helpUri": "https://github.com/MikeeBuilds/clawpinch/blob/main/references/check-catalog.md#chk-cfg-001",
+            "helpUri": "https://github.com/MikeeBuilds/clawpinch/blob/main/references/check-catalog.md",
             "defaultConfiguration": {
               "level": "error"
             }
@@ -374,7 +374,7 @@ jobs:
           npx clawpinch --sarif --no-interactive > clawpinch.sarif
 
           # Count critical findings
-          CRITICAL=$(jq '[.runs[0].results[] | select(.level == "error")] | length' clawpinch.sarif)
+          CRITICAL=$(jq '[.runs[0]?.results[]? | select(.level == "error")] | length' clawpinch.sarif)
           echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
         continue-on-error: true
 

@@ -27,12 +27,12 @@ convert_to_sarif() {
     return 1
   fi
 
-  # Get tool version from package.json (fallback to 1.2.0)
-  local tool_version="1.2.0"
+  # Get tool version from package.json (fallback to 1.2.1)
+  local tool_version="1.2.1"
   local package_json
   package_json="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/package.json"
   if [[ -f "$package_json" ]]; then
-    tool_version="$(jq -r '.version // "1.2.0"' "$package_json" 2>/dev/null || echo "1.2.0")"
+    tool_version="$(jq -r '.version // "1.2.1"' "$package_json" 2>/dev/null || echo "1.2.1")"
   fi
 
   # SARIF schema URL
@@ -68,7 +68,7 @@ convert_to_sarif() {
                   fullDescription: {
                     text: .description
                   },
-                  helpUri: ($tool_uri + "/blob/main/references/check-catalog.md#" + (.id | ascii_downcase)),
+                  helpUri: ($tool_uri + "/blob/main/references/check-catalog.md"),
                   defaultConfiguration: {
                     level: (
                       if .severity == "critical" then "error"
