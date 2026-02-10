@@ -1,6 +1,6 @@
 # ClawPinch
 
-Security audit toolkit for OpenClaw deployments. Scans 63 checks across 8 categories (configuration, secrets, network, skills, permissions, cron, CVE, supply chain).
+Security audit toolkit for OpenClaw deployments. Scans 63 checks across 9 categories (configuration, secrets, network, skills, permissions, cron, CVE, supply chain, integrity).
 
 ## Quick Start
 
@@ -40,7 +40,9 @@ clawpinch/
 │   ├── scan_permissions.sh   # CHK-PRM-001..008 — least-privilege, wildcards
 │   ├── scan_crons.sh         # CHK-CRN-001..006 — sandbox, timeouts, privilege
 │   ├── scan_cves.sh          # CHK-CVE-001..005 — known vulns, outdated deps
-│   └── scan_supply_chain.sh  # CHK-SUP-001..008 — registry trust, hash verify
+│   ├── scan_supply_chain.sh  # CHK-SUP-001..008 — registry trust, hash verify
+│   ├── scan_integrity.sh     # CHK-INT-001 — reference data integrity verification
+│   └── update_checksums.sh   # Regenerate SHA256 checksums for reference data
 ├── references/
 │   ├── known-cves.json       # CVE database for version checks
 │   ├── malicious-patterns.json # Known bad skill hashes
@@ -133,3 +135,19 @@ When adding a new auto-fix command to a scanner:
 5. Document the security rationale
 
 **IMPORTANT: Never use eval() directly in new code.** Always use `safe_exec_command()` for command execution. This prevents command injection attacks via compromised reference files or malicious findings.
+
+## Reference Data Integrity
+
+ClawPinch protects its own reference data files using SHA256 checksums:
+
+- **What's protected:** `references/known-cves.json` and `references/malicious-patterns.json`
+- **How it works:** Each `.json` file has a `.json.sha256` checksum file. On every scan, `scan_integrity.sh` verifies the hash matches.
+- **When verification fails:** A critical finding (CHK-INT-001) is emitted. This could indicate file corruption or tampering.
+- **Updating reference data:** After modifying any `.json` file in `references/`, run `bash scripts/update_checksums.sh` to regenerate checksums.
+
+**Common.sh helper:**
+```bash
+verify_json_integrity <json_file_path>  # Returns 0 if valid, 1 if failed
+```
+
+This prevents supply-chain attacks where an attacker modifies ClawPinch's CVE database or malicious pattern signatures to hide real threats.

@@ -77,6 +77,7 @@ bash clawpinch.sh
 
 - **63 checks** across 8 scanner categories
 - **Parallel scanner execution** -- 1.5-3x faster scans by running all scanners concurrently (use `--sequential` for debugging)
+- **Integrity verification** -- SHA256 checksums protect reference data from tampering
 - **Structured JSON output** for programmatic consumption
 - **Interactive review mode** with one-by-one fix workflow
 - **Auto-fix commands** for findings that support automated remediation
@@ -414,6 +415,12 @@ The terminal UI features:
 | 007 | Registry certificate not pinned                | Warn     |
 | 008 | Skill author identity not verified             | Warn     |
 
+### Integrity (CHK-INT)
+
+| ID  | Check                                          | Severity |
+|-----|------------------------------------------------|----------|
+| 001 | Reference data integrity check failed          | Critical |
+
 ---
 
 ## Security
@@ -450,6 +457,8 @@ clawpinch/
     scan_crons.sh         # Cron scanner
     scan_cves.sh          # CVE scanner
     scan_supply_chain.sh  # Supply chain scanner
+    scan_integrity.sh     # Reference data integrity scanner
+    update_checksums.sh   # Regenerate reference data checksums
   references/
     known-cves.json       # CVE database
     malicious-patterns.json # ClawHavoc signatures
@@ -465,6 +474,44 @@ clawpinch/
   CLAUDE.md               # Project context for Claude Code
   README.md               # This file
 ```
+
+---
+
+## Maintaining Reference Data
+
+ClawPinch uses SHA256 checksums to verify the integrity of reference JSON files (`known-cves.json`, `malicious-patterns.json`). This protects against tampering that could cause the tool to miss real threats or inject malicious auto-fix commands.
+
+### How Integrity Verification Works
+
+- Each `.json` file has a corresponding `.json.sha256` checksum file
+- On every scan, ClawPinch verifies the SHA256 hash matches the expected value
+- If verification fails, a **critical** finding (CHK-INT-001) is emitted
+- The scan continues, but you'll be warned that reference data may be compromised
+
+### When Verification Fails
+
+If you see `CHK-INT-001: Reference data integrity check failed`:
+
+1. **Check if you modified the files** -- If you intentionally updated reference data, regenerate checksums (see below)
+2. **Suspect tampering** -- If you didn't modify the files, restore them from a trusted source (GitHub release, npm package, or fresh clone)
+3. **Review the evidence** -- The finding will list which files failed verification
+
+### Updating Reference Data
+
+When you update `known-cves.json` or `malicious-patterns.json`, you **must** regenerate the checksums:
+
+```bash
+# Regenerate all checksums in references/ directory
+bash scripts/update_checksums.sh
+```
+
+This script:
+- Finds all `.json` files in `references/`
+- Computes SHA256 hashes (using `sha256sum` on Linux, `shasum -a 256` on macOS)
+- Writes `.json.sha256` files in standard format: `<hash>  <filename>`
+- Reports success/failure for each file
+
+**Always run this after modifying reference data** -- otherwise the next scan will fail integrity verification.
 
 ---
 
