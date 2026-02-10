@@ -1,6 +1,6 @@
 ---
 name: clawpinch
-description: "Security audit toolkit for OpenClaw deployments. Scans 63 checks across 8 categories. Use when asked to audit security, harden an installation, check for vulnerabilities, or review config safety."
+description: "Security audit toolkit for OpenClaw deployments. Scans 71 checks across 9 categories. Use when asked to audit security, harden an installation, check for vulnerabilities, or review config safety."
 version: "1.2.0"
 author: MikeeBuilds
 license: MIT
@@ -96,6 +96,7 @@ Each finding is a JSON object:
 | Cron | CHK-CRN-001..006 | 6 | Sandbox, timeouts, privilege escalation |
 | CVE | CHK-CVE-001..005 | 5 | Known vulnerabilities, outdated deps |
 | Supply Chain | CHK-SUP-001..008 | 8 | Registry trust, hash verification, lockfiles |
+| WebMCP | CHK-WEB-001..008 | 8 | WebMCP origins, capabilities, prompt injection |
 
 ## Integration Patterns
 
