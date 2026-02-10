@@ -470,6 +470,7 @@ _scanner_category() {
   case "$scanner_name" in
     scan_config*)     echo "🔧|Configuration" ;;
     scan_secrets*)    echo "🔑|Secrets" ;;
+    scan_git_history*)echo "📜|Git History" ;;
     scan_cves*)       echo "🛡️|CVE & Versions" ;;
     scan_network*)    echo "🌐|Network" ;;
     scan_permissions*)echo "🔒|Permissions" ;;

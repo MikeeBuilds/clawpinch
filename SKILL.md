@@ -43,7 +43,7 @@ bash clawpinch.sh
 # Standard interactive scan
 clawpinch
 
-# Deep scan (supply-chain hash verification, full skill decompilation)
+# Deep scan (supply-chain hash verification, full skill decompilation, extended git history)
 clawpinch --deep
 
 # JSON output for programmatic consumption
