@@ -14,6 +14,7 @@ source "$HELPERS_DIR/common.sh"
 source "$HELPERS_DIR/report.sh"
 source "$HELPERS_DIR/redact.sh"
 source "$HELPERS_DIR/interactive.sh"
+source "$HELPERS_DIR/suppression.sh"
 
 # ─── Signal trap for animation cleanup ──────────────────────────────────────
 
@@ -29,6 +30,11 @@ NO_INTERACTIVE=0
 REMEDIATE=0
 PARALLEL_SCANNERS=1
 CONFIG_DIR=""
+SHOW_SUPPRESSED=0
+NO_IGNORE=0
+
+# Reusable jq severity ordering function (used in sort and merge operations)
+JQ_SEV_ORDER_FUNC='def sev_order: if . == "critical" then 0 elif . == "warn" then 1 elif . == "info" then 2 elif . == "ok" then 3 else 4 end;'
 
 # ─── Usage ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +51,8 @@ Options:
   --no-interactive  Disable interactive post-scan menu
   --remediate       Run scan then pipe findings to Claude for AI remediation
   --config-dir PATH Explicit path to openclaw config directory
+  --show-suppressed Include suppressed findings in normal output
+  --no-ignore       Disable all suppressions for full audit scan
   -h, --help        Show this help message
 
 Exit codes:
@@ -65,6 +73,8 @@ while [[ $# -gt 0 ]]; do
     --sequential) PARALLEL_SCANNERS=0; shift ;;
     --no-interactive) NO_INTERACTIVE=1; shift ;;
     --remediate)  REMEDIATE=1; NO_INTERACTIVE=1; shift ;;
+    --show-suppressed) SHOW_SUPPRESSED=1; shift ;;
+    --no-ignore)  NO_IGNORE=1; shift ;;
     --config-dir)
       if [[ -z "${2:-}" ]]; then
         log_error "--config-dir requires a path argument"
@@ -86,6 +96,8 @@ done
 export CLAWPINCH_DEEP="$DEEP"
 export CLAWPINCH_SHOW_FIX="$SHOW_FIX"
 export CLAWPINCH_CONFIG_DIR="$CONFIG_DIR"
+export CLAWPINCH_SHOW_SUPPRESSED="$SHOW_SUPPRESSED"
+export CLAWPINCH_NO_IGNORE="$NO_IGNORE"
 export QUIET
 
 # ─── Validate security config (early check for --remediate) ──────────────────
@@ -332,29 +344,52 @@ fi
 # ─── Sort findings by severity ───────────────────────────────────────────────
 # Order: critical > warn > info > ok
 
-SORTED_FINDINGS="$(echo "$ALL_FINDINGS" | jq '
-  def sev_order:
-    if . == "critical" then 0
-    elif . == "warn" then 1
-    elif . == "info" then 2
-    elif . == "ok" then 3
-    else 4
-    end;
-  sort_by(.severity | sev_order)
-')"
+SORTED_FINDINGS="$(echo "$ALL_FINDINGS" | jq "${JQ_SEV_ORDER_FUNC} sort_by(.severity | sev_order)")"
+
+# ─── Apply suppression filtering ─────────────────────────────────────────────
+
+ACTIVE_FINDINGS="$SORTED_FINDINGS"
+SUPPRESSED_FINDINGS="[]"
+
+# Apply filtering unless --no-ignore is set
+if [[ "$NO_IGNORE" -eq 0 ]]; then
+  # Look for .clawpinch-ignore.json in the OpenClaw config directory or current directory
+  ignore_file=".clawpinch-ignore.json"
+  if [[ -n "$OPENCLAW_CONFIG" ]] && [[ -f "$(dirname "$OPENCLAW_CONFIG")/.clawpinch-ignore.json" ]]; then
+    ignore_file="$(dirname "$OPENCLAW_CONFIG")/.clawpinch-ignore.json"
+  fi
+
+  # Filter findings into active and suppressed
+  if [[ -f "$ignore_file" ]]; then
+    filtered_result="$(echo "$SORTED_FINDINGS" | filter_findings "$ignore_file")"
+    ACTIVE_FINDINGS="$(echo "$filtered_result" | jq -c '.active')"
+    SUPPRESSED_FINDINGS="$(echo "$filtered_result" | jq -c '.suppressed')"
+  fi
+fi
+
+# For --show-suppressed mode, merge suppressed back into active for display
+DISPLAY_FINDINGS="$ACTIVE_FINDINGS"
+if [[ "$SHOW_SUPPRESSED" -eq 1 ]]; then
+  # Mark suppressed findings with a "suppressed": true field before merging
+  MARKED_SUPPRESSED="$(echo "$SUPPRESSED_FINDINGS" | jq '[.[] | . + {suppressed: true}]')"
+  DISPLAY_FINDINGS="$(echo "$ACTIVE_FINDINGS" "$MARKED_SUPPRESSED" | jq -s "${JQ_SEV_ORDER_FUNC} .[0] + .[1] | sort_by(.severity | sev_order)")"
+fi
 
 # ─── Count by severity ──────────────────────────────────────────────────────
+# Count only active findings (not suppressed) for exit code calculation
 
-count_critical="$(echo "$SORTED_FINDINGS" | jq '[.[] | select(.severity == "critical")] | length')"
-count_warn="$(echo "$SORTED_FINDINGS"     | jq '[.[] | select(.severity == "warn")] | length')"
-count_info="$(echo "$SORTED_FINDINGS"     | jq '[.[] | select(.severity == "info")] | length')"
-count_ok="$(echo "$SORTED_FINDINGS"       | jq '[.[] | select(.severity == "ok")] | length')"
+count_critical="$(echo "$ACTIVE_FINDINGS" | jq '[.[] | select(.severity == "critical")] | length')"
+count_warn="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "warn")] | length')"
+count_info="$(echo "$ACTIVE_FINDINGS"     | jq '[.[] | select(.severity == "info")] | length')"
+count_ok="$(echo "$ACTIVE_FINDINGS"       | jq '[.[] | select(.severity == "ok")] | length')"
+count_suppressed="$(echo "$SUPPRESSED_FINDINGS" | jq 'length')"
 
 # ─── Output ──────────────────────────────────────────────────────────────────
 
 if [[ "$JSON_OUTPUT" -eq 1 ]]; then
-  # Pure JSON output (compact for piping efficiency)
-  echo "$SORTED_FINDINGS" | jq -c .
+  # Pure JSON output with findings and suppressed arrays
+  jq -n -c --argjson findings "$ACTIVE_FINDINGS" --argjson suppressed "$SUPPRESSED_FINDINGS" \
+    '{findings: $findings, suppressed: $suppressed}'
 else
   if [[ "$QUIET" -eq 0 ]]; then
     # Determine if interactive mode is available
@@ -365,13 +400,13 @@ else
 
     if [[ "$_is_interactive" -eq 1 ]]; then
       # Compact grouped table (new v1.1 display)
-      print_findings_compact "$SORTED_FINDINGS"
+      print_findings_compact "$DISPLAY_FINDINGS"
     else
       # Non-interactive fallback: full card display (v1.0 behavior)
-      total="$(echo "$SORTED_FINDINGS" | jq 'length')"
+      total="$(echo "$DISPLAY_FINDINGS" | jq 'length')"
       if (( total > 0 )); then
         for i in $(seq 0 $((total - 1))); do
-          finding="$(echo "$SORTED_FINDINGS" | jq -c ".[$i]")"
+          finding="$(echo "$DISPLAY_FINDINGS" | jq -c ".[$i]")"
           print_finding "$finding"
         done
       else
@@ -381,14 +416,14 @@ else
   fi
 
   # Always print summary dashboard (animated when TTY)
-  print_summary_animated "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed"
+  print_summary_animated "$count_critical" "$count_warn" "$count_info" "$count_ok" "$scanner_count" "$_scan_elapsed" "$count_suppressed"
 
   # Contextual completion message
   print_completion_message "$count_critical" "$count_warn"
 
   # Launch interactive menu if TTY and not disabled
   if [[ "$QUIET" -eq 0 ]] && [[ "$NO_INTERACTIVE" -eq 0 ]] && [[ -t 0 ]]; then
-    interactive_menu "$SORTED_FINDINGS" "$scanner_count" "$_scan_elapsed"
+    interactive_menu "$DISPLAY_FINDINGS" "$scanner_count" "$_scan_elapsed"
   fi
 
   # ─── AI Remediation pipeline ─────────────────────────────────────────────
@@ -405,7 +440,7 @@ else
     if [[ -z "$_claude_bin" ]]; then
       log_error "Claude CLI not found. Install it or set CLAWPINCH_CLAUDE_BIN."
     else
-      _non_ok_findings="$(echo "$SORTED_FINDINGS" | jq -c '[.[] | select(.severity != "ok")]')"
+      _non_ok_findings="$(echo "$ACTIVE_FINDINGS" | jq -c '[.[] | select(.severity != "ok")]')"
       _non_ok_count="$(echo "$_non_ok_findings" | jq 'length')"
 
       if (( _non_ok_count > 0 )); then

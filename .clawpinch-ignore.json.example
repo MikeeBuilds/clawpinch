@@ -1,0 +1,53 @@
+{
+  "$schema": "https://clawpinch.dev/schemas/ignore.json",
+  "_comment": "This file configures finding suppression for ClawPinch security scans",
+  "_documentation": {
+    "purpose": "Suppress accepted-risk findings to prevent CI/CD pipeline failures",
+    "location": "Copy this file to .clawpinch-ignore.json in your project root",
+    "fields": {
+      "id": "(required) Check ID to suppress (e.g., CHK-CFG-001)",
+      "reason": "(required) Justification for suppressing this finding",
+      "expires": "(optional) ISO 8601 timestamp when suppression expires and finding reactivates",
+      "suppressed_by": "(optional) Email or identifier of person who approved suppression",
+      "suppressed_at": "(optional) ISO 8601 timestamp when suppression was created"
+    },
+    "behavior": {
+      "suppressed_findings": "Moved to 'suppressed' array in JSON output, excluded from severity counts",
+      "expired_suppressions": "Automatically reactivated if expires date is in the past",
+      "flags": {
+        "--show-suppressed": "Include suppressed findings in output with [SUPPRESSED] marker",
+        "--no-ignore": "Disable all suppressions for full audit scans"
+      }
+    }
+  },
+  "suppressions": [
+    {
+      "id": "CHK-CFG-001",
+      "reason": "Dev environment - open gateway is intentional for local testing",
+      "expires": "2025-12-31T23:59:59Z",
+      "suppressed_by": "devops@example.com",
+      "suppressed_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "CHK-SEC-003",
+      "reason": "Test API key in example config - not used in production deployments"
+    },
+    {
+      "id": "CHK-NET-004",
+      "reason": "WebSocket endpoint exposed for real-time collaboration feature",
+      "expires": "2025-06-30T00:00:00Z",
+      "suppressed_by": "security-team@example.com"
+    },
+    {
+      "id": "CHK-PRM-002",
+      "reason": "Wildcard permission required for dynamic skill loader - reviewed by security",
+      "suppressed_by": "ciso@example.com",
+      "suppressed_at": "2024-02-20T14:30:00Z"
+    },
+    {
+      "id": "CHK-CRN-001",
+      "reason": "Cron job needs elevated permissions for system maintenance tasks",
+      "expires": "2025-03-01T00:00:00Z"
+    }
+  ]
+}

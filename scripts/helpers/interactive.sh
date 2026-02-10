@@ -233,10 +233,16 @@ print_findings_compact() {
     for (( i=0; i<show_count; i++ )); do
       local finding
       finding="$(echo "$json_array" | jq -c "[.[] | select(.severity == \"$sev\")][$i]")"
-      local f_id f_title f_auto_fix
+      local f_id f_title f_auto_fix f_suppressed
       f_id="$(echo "$finding" | jq -r '.id // ""')"
       f_title="$(echo "$finding" | jq -r '.title // ""')"
       f_auto_fix="$(echo "$finding" | jq -r '.auto_fix // ""')"
+      f_suppressed="$(echo "$finding" | jq -r '.suppressed // false')"
+
+      # Add [SUPPRESSED] prefix to title if suppressed
+      if [[ "$f_suppressed" == "true" ]]; then
+        f_title="[SUPPRESSED] $f_title"
+      fi
 
       # Truncate title if needed
       local max_title_len=$(( col_title - 2 ))
@@ -244,11 +250,16 @@ print_findings_compact() {
         f_title="${f_title:0:$((max_title_len - 3))}..."
       fi
 
-      # Fix indicator (fixed-width, no color padding issues)
+      # Dim the row if suppressed
+      local row_color=""
+      if [[ "$f_suppressed" == "true" ]]; then
+        row_color="$_CLR_DIM"
+      fi
+
       printf '  %s' "$_TBL_V"
-      printf " %-*s" $(( col_id - 2 )) "$f_id"
+      printf " %b%-*s%b" "$row_color" $(( col_id - 2 )) "$f_id" "$_CLR_RST"
       printf ' %s' "$_TBL_V"
-      printf " %-*s" $(( col_title - 2 )) "$f_title"
+      printf " %b%-*s%b" "$row_color" $(( col_title - 2 )) "$f_title" "$_CLR_RST"
       printf ' %s' "$_TBL_V"
       if [[ -n "$f_auto_fix" ]]; then
         printf ' %b✓%b  ' "$_CLR_OK" "$_CLR_RST"

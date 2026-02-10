@@ -561,18 +561,19 @@ print_finding() {
   w="$(_box_width)"
   local inner=$(( w - 6 ))  # "  ┃ " left (4) + " ┃" right (2)
 
-  local id severity title description evidence remediation auto_fix
-  id="$(echo "$json"          | jq -r '.id // ""')"
-  severity="$(echo "$json"    | jq -r '.severity // "info"')"
-  title="$(echo "$json"       | jq -r '.title // ""')"
+  local id severity title description evidence remediation auto_fix suppressed
+  id="$(echo "$json" | jq -r '.id // ""')"
+  severity="$(echo "$json" | jq -r '.severity // "info"')"
+  title="$(echo "$json" | jq -r '.title // ""')"
   description="$(echo "$json" | jq -r '.description // ""')"
-  evidence="$(echo "$json"    | jq -r '.evidence // ""')"
+  evidence="$(echo "$json" | jq -r '.evidence // ""')"
   remediation="$(echo "$json" | jq -r '.remediation // ""')"
-  auto_fix="$(echo "$json"    | jq -r '.auto_fix // ""')"
+  auto_fix="$(echo "$json" | jq -r '.auto_fix // ""')"
+  suppressed="$(echo "$json" | jq -r '.suppressed // false')"
 
   # For OK findings, use compact single-line format
   if [[ "$severity" == "ok" ]]; then
-    print_finding_ok "$title" "$id"
+    print_finding_ok "$title" "$id" "$suppressed"
     return
   fi
 
@@ -593,10 +594,18 @@ print_finding() {
   printf ' %b%s%b\n' "$sev_clr" "$_CARD_V" "$_CLR_RST"
 
   # ─ Title text line
-  local title_pad=$(( inner - ${#title} ))
+  local display_title="$title"
+  if [[ "$suppressed" == "true" ]]; then
+    display_title="[SUPPRESSED] $title"
+  fi
+  local title_pad=$(( inner - ${#display_title} ))
   if (( title_pad < 0 )); then title_pad=0; fi
   printf '  %b%s%b ' "$sev_clr" "$_CARD_V" "$_CLR_RST"
-  printf '%b%s%b' "$_CLR_WHITE" "$title" "$_CLR_RST"
+  if [[ "$suppressed" == "true" ]]; then
+    printf '%b%s%b' "$_CLR_DIM" "$display_title" "$_CLR_RST"
+  else
+    printf '%b%s%b' "$_CLR_WHITE" "$display_title" "$_CLR_RST"
+  fi
   printf '%*s' "$title_pad" ''
   printf ' %b%s%b\n' "$sev_clr" "$_CARD_V" "$_CLR_RST"
 
@@ -685,17 +694,27 @@ print_finding() {
 print_finding_ok() {
   local title="$1"
   local id="${2:-}"
+  local suppressed="${3:-false}"
   local w
   w="$(_box_width)"
+
+  local display_title="$title"
+  if [[ "$suppressed" == "true" ]]; then
+    display_title="[SUPPRESSED] $title"
+  fi
 
   local prefix="✓ "
   local prefix_len=2
   local id_len=${#id}
-  local title_len=${#title}
+  local title_len=${#display_title}
   local gap=$(( w - 4 - prefix_len - title_len - id_len ))
   if (( gap < 1 )); then gap=1; fi
 
-  printf '  %b✓%b %s' "$_CLR_OK" "$_CLR_RST" "$title"
+  if [[ "$suppressed" == "true" ]]; then
+    printf '  %b✓%b %b%s%b' "$_CLR_OK" "$_CLR_RST" "$_CLR_DIM" "$display_title" "$_CLR_RST"
+  else
+    printf '  %b✓%b %s' "$_CLR_OK" "$_CLR_RST" "$display_title"
+  fi
   printf '%*s' "$gap" ''
   printf '%b%s%b\n' "$_CLR_DIM" "$id" "$_CLR_RST"
 }
@@ -730,6 +749,7 @@ print_summary() {
   local ok="${4:-0}"
   local scanner_count="${5:-0}"
   local elapsed="${6:-0}"
+  local suppressed="${7:-0}"
 
   local total=$(( critical + warn + info + ok ))
   local w
@@ -836,6 +856,20 @@ print_summary() {
   printf '%*s%b%s%b' "$time_lpad" '' "$_CLR_DIM" "$time_text" "$_CLR_RST"
   printf '%*s' "$time_rpad" ''
   printf " %b%s%b\n" "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+
+  # Suppressed count line (only show if > 0)
+  if (( suppressed > 0 )); then
+    local supp_text
+    supp_text="$(printf 'Suppressed: %d findings' "$suppressed")"
+    local supp_len=${#supp_text}
+    local supp_lpad=2
+    local supp_rpad=$(( inner - supp_lpad - supp_len ))
+    if (( supp_rpad < 0 )); then supp_rpad=0; fi
+    printf "  %b%s%b " "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+    printf '%*s%b%s%b' "$supp_lpad" '' "$_CLR_DIM" "$supp_text" "$_CLR_RST"
+    printf '%*s' "$supp_rpad" ''
+    printf " %b%s%b\n" "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
+  fi
 
   # Empty line
   printf "  %b%s%b " "$_CLR_BOX" "$_HBOX_V" "$_CLR_RST"
