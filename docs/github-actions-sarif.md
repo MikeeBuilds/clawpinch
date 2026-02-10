@@ -1,6 +1,6 @@
 # GitHub Actions SARIF Integration
 
-This guide shows you how to integrate ClawPinch with GitHub Code Scanning using SARIF output. This enables security findings to appear inline in pull requests and in the repository's Security tab.
+This guide shows you how to integrate ClawPinch with GitHub Code Scanning using SARIF output. This enables security findings to appear in the repository's Security tab as code scanning alerts.
 
 ---
 
@@ -83,24 +83,13 @@ The `github/codeql-action/upload-sarif@v3` action uploads the SARIF file to GitH
 
 ### 3. Viewing Results in Pull Requests
 
-Once uploaded, security findings appear in pull requests:
+Once uploaded, security findings appear in the repository's **Security tab** under Code Scanning:
 
-- **Code annotations**: Findings appear as inline comments on the relevant files
+- **Security tab alerts**: Findings are listed as code scanning alerts, filterable by tool ("ClawPinch")
 - **PR checks**: A "Code scanning results / ClawPinch" check appears in the PR status
-- **Diff view**: Only findings introduced in the PR are highlighted
 - **Severity badges**: Critical, warning, and info findings are color-coded
 
-**Example PR annotation:**
-
-```
-┃ ● CRITICAL                            CHK-CFG-001 ┃
-┃ exec.ask not set to always                         ┃
-┃                                                     ┃
-┃ The exec.ask setting controls whether the user is  ┃
-┃ prompted before command execution.                 ┃
-┃                                                     ┃
-┃ Fix: Set exec.ask to 'always' in openclaw.json     ┃
-```
+> **Note:** Because ClawPinch scans runtime configurations rather than source files, findings use the repository root as their location (`"uri": "."`) and do not include specific file or line information. As a result, findings appear in the Security tab as repository-level alerts rather than as inline PR annotations on specific lines of code.
 
 ### 4. Viewing Results in the Security Tab
 
@@ -285,7 +274,7 @@ If validation fails, [open an issue](https://github.com/MikeeBuilds/clawpinch/is
 
 ## SARIF Output Format Reference
 
-ClawPinch produces SARIF v2.1.0 output with the following structure:
+ClawPinch produces SARIF v2.1.0 output with the following structure. The `version` field is dynamically populated from `package.json` at runtime:
 
 ```json
 {
@@ -295,7 +284,7 @@ ClawPinch produces SARIF v2.1.0 output with the following structure:
     "tool": {
       "driver": {
         "name": "ClawPinch",
-        "version": "1.2.1",
+        "version": "<clawpinch-version>",
         "informationUri": "https://github.com/MikeeBuilds/clawpinch",
         "rules": [
           {
@@ -317,8 +306,8 @@ ClawPinch produces SARIF v2.1.0 output with the following structure:
         "ruleId": "CHK-CFG-001",
         "level": "error",
         "message": {
-          "text": "Gateway listening on 0.0.0.0 - restricts to localhost (127.0.0.1)",
-          "markdown": "**Finding:** Gateway listening on 0.0.0.0\n\n**Fix:** Set gateway.host to '127.0.0.1' in openclaw.json"
+          "text": "Gateway listening on 0.0.0.0",
+          "markdown": "The gateway is configured to listen on all interfaces (0.0.0.0), exposing it to the network.\n\n**Remediation:** Set gateway.host to '127.0.0.1' in openclaw.json"
         }
       }
     ]
