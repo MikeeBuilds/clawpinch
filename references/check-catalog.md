@@ -352,3 +352,49 @@ severity, description, and remediation.
 - **Severity:** Warn
 - **Description:** The skill does not include a verified author signature. The claimed author cannot be confirmed.
 - **Remediation:** Prefer skills with verified author signatures.
+
+---
+
+## WebMCP (CHK-WEB)
+
+### CHK-WEB-001 -- WebMCP endpoint connects to untrusted origin
+- **Severity:** Critical
+- **Description:** A WebMCP service declaration references an origin that is not in the trusted origins allow-list. Untrusted origins can serve malicious tools that exfiltrate data or execute arbitrary commands.
+- **Remediation:** Add the origin to `WEBMCP_TRUSTED_ORIGINS` if genuinely trusted. Otherwise, remove the service declaration.
+
+### CHK-WEB-002 -- WebMCP service declares excessive capabilities
+- **Severity:** Warn
+- **Description:** A WebMCP service declares capabilities including sensitive operations (filesystem, shell, exec, network, process, admin, etc.), dramatically expanding the attack surface.
+- **Remediation:** Apply least privilege. Remove sensitive capabilities unless strictly required. Scope capabilities to specific resources.
+
+### CHK-WEB-003 -- WebMCP modelContext lacks capability scoping
+- **Severity:** Warn
+- **Description:** A `modelContext` declaration uses wildcard grants or lacks capability scoping, exposing full model context to all connected services.
+- **Remediation:** Add explicit `capabilities` or `scope` fields. Replace `*` with specific service allow-lists.
+
+### CHK-WEB-004 -- WebMCP cross-origin service injection
+- **Severity:** Critical
+- **Description:** Multiple WebMCP origins configured without origin isolation. One origin can register services that impersonate trusted services from another origin.
+- **Remediation:** Enable `webmcp.originIsolation: true`. Use origin-namespaced service names.
+- **Auto-fix:** `jq '.webmcp.originIsolation = true' openclaw.json > tmp && mv tmp openclaw.json`
+
+### CHK-WEB-005 -- WebMCP service data exfiltration risk
+- **Severity:** Critical
+- **Description:** A WebMCP service has access to sensitive agent data (memory, credentials, session state, MEMORY.md, SOUL.md, USER.md).
+- **Remediation:** Remove sensitive data access from service declarations. Never grant filesystem access to external-origin services.
+
+### CHK-WEB-006 -- WebMCP prompt injection via service description
+- **Severity:** Critical
+- **Description:** A WebMCP service description contains prompt injection patterns ("ignore previous instructions", persona overrides, LLM control tokens).
+- **Remediation:** Sanitize all service descriptions. Implement content filtering and length limits.
+
+### CHK-WEB-007 -- WebMCP service lacks authentication
+- **Severity:** Warn
+- **Description:** WebMCP services configured without authentication. Unauthenticated services can be invoked by any client and are vulnerable to MITM.
+- **Remediation:** Enable authentication globally: `webmcp.auth.type = "token"` with `webmcp.auth.required = true`.
+- **Auto-fix:** `jq '.webmcp.auth = {"type": "token", "required": true}' openclaw.json > tmp && mv tmp openclaw.json`
+
+### CHK-WEB-008 -- WebMCP declarative form auto-submission risk
+- **Severity:** Warn
+- **Description:** A form-type WebMCP service allows auto-submission without user confirmation. The model may pre-fill forms with sensitive conversation data.
+- **Remediation:** Set `autoSubmit: false` and `confirmRequired: true` for all form-type services.
