@@ -309,6 +309,55 @@ test_chmod_600() {
 }
 
 # ---------------------------------------------------------------------------
+# Test: CHK-PRM-013 auto-fix (SSH private key permissions)
+# ---------------------------------------------------------------------------
+test_prm_013() {
+    # Create mock SSH directory
+    local ssh_dir="${TEST_DIR}/.ssh"
+    mkdir -p "$ssh_dir"
+
+    # Create test SSH private keys
+    local test_key="${ssh_dir}/id_test_rsa"
+    local test_pem="${ssh_dir}/test.pem"
+
+    cat > "$test_key" <<'EOF'
+-----BEGIN RSA PRIVATE KEY-----
+fake key content
+-----END RSA PRIVATE KEY-----
+EOF
+
+    cat > "$test_pem" <<'EOF'
+-----BEGIN PRIVATE KEY-----
+fake pem content
+-----END PRIVATE KEY-----
+EOF
+
+    for key_file in "$test_key" "$test_pem"; do
+        # Set insecure permissions
+        chmod 644 "$key_file"
+
+        # Run the auto-fix command
+        chmod 600 "$key_file"
+
+        # Verify permissions were fixed
+        local perms
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+            perms=$(stat -f "%Lp" "$key_file")
+        else
+            perms=$(stat -c "%a" "$key_file")
+        fi
+
+        if [[ "$perms" != "600" ]]; then
+            return 1
+        fi
+    done
+    # NOTE: This test verifies the chmod auto-fix command works correctly, but
+    # does not exercise the scanner's find/detect logic itself. This is
+    # consistent with other integration tests in this file which focus on
+    # auto-fix command validation rather than scanner detection coverage.
+}
+
+# ---------------------------------------------------------------------------
 # Main test execution
 # ---------------------------------------------------------------------------
 
@@ -336,6 +385,7 @@ run_test "CHK-CFG-010: Enable sensitive data redaction" "test_cfg_010"
 run_test "CHK-CFG-011: Enable browser restrictions" "test_cfg_011"
 run_test "CHK-CFG-012: Disable network discovery" "test_cfg_012"
 run_test "File permissions: chmod 600" "test_chmod_600"
+run_test "CHK-PRM-013: Fix SSH key permissions" "test_prm_013"
 
 echo "─────────────────────────────────────────────────────────────────────────────"
 echo ""

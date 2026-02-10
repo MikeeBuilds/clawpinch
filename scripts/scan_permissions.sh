@@ -646,6 +646,62 @@ check_cloud_sync() {
   fi
 }
 
+# ─── CHK-PRM-013: SSH private key permissions ───────────────────────────────
+
+check_ssh_keys() {
+  log_info "CHK-PRM-013: Checking SSH private key permissions"
+
+  local ssh_dir="$HOME/.ssh"
+  local found=0
+
+  if [[ ! -d "$ssh_dir" ]]; then
+    add_finding "CHK-PRM-013" "info" \
+      "No SSH directory found" \
+      "No ~/.ssh directory exists on this system" "" "" ""
+    return
+  fi
+
+  # Search for id_* files and *.pem files
+  while IFS= read -r -d '' f; do
+    found=1
+    local perms
+    perms="$(get_perms "$f")"
+    [[ -z "$perms" ]] && continue
+
+    if [[ "$perms" != "600" ]]; then
+      # Validate filename contains only safe characters before using in auto_fix.
+      # The safe_exec whitelist pattern for chmod requires paths matching
+      # [a-zA-Z0-9/._-]+, so we must not emit auto_fix for filenames with
+      # characters outside that set (e.g., spaces, quotes, shell metacharacters).
+      # Standard SSH key names (id_rsa, id_ed25519, *.pem) always pass this check.
+      local auto_fix_cmd="" remediation_msg="Manual fix required: chmod 600 [file]"
+      if [[ "$f" =~ ^[a-zA-Z0-9/._-]+$ ]]; then
+        auto_fix_cmd="chmod 600 $f"
+        remediation_msg="Run: chmod 600 $f"
+      fi
+      add_finding "CHK-PRM-013" "critical" \
+        "SSH private key has insecure permissions" \
+        "SSH private keys must be chmod 600 or SSH clients will refuse to use them. Current: $perms" \
+        "$f mode $perms" \
+        "$remediation_msg" \
+        "$auto_fix_cmd"
+    else
+      add_finding "CHK-PRM-013" "ok" \
+        "SSH private key permissions correct" \
+        "SSH private key is properly restricted to owner read/write" \
+        "$f mode $perms" "" ""
+    fi
+  done < <(find "$ssh_dir" -maxdepth 1 \( \
+    -iname 'id_*' -o -iname '*.pem' \
+  \) -type f ! -iname '*.pub' -print0 2>/dev/null)
+
+  if [[ "$found" -eq 0 ]]; then
+    add_finding "CHK-PRM-013" "info" \
+      "No SSH private keys found" \
+      "No SSH private key files detected in ~/.ssh directory" "" "" ""
+  fi
+}
+
 # ─── Run all checks ─────────────────────────────────────────────────────────
 
 main() {
@@ -663,6 +719,7 @@ main() {
   check_credentials_dir
   check_log_secrets
   check_cloud_sync
+  check_ssh_keys
 
   log_info "Permissions scan complete: ${#FINDINGS[@]} finding(s)"
 

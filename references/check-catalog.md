@@ -246,6 +246,12 @@ severity, description, and remediation.
 - **Description:** Changes to permission rules are not logged. Malicious permission escalation cannot be detected after the fact.
 - **Remediation:** Enable audit logging for permission changes.
 
+### CHK-PRM-013 -- SSH private key has overly permissive permissions
+- **Severity:** Critical
+- **Description:** SSH private key files (e.g., `~/.ssh/id_rsa`, `~/.ssh/id_ed25519`) have permissions more permissive than 600. SSH clients often refuse to use keys with incorrect permissions, and they can be read by other users on the system.
+- **Remediation:** Set SSH key permissions to 600 (read/write owner only): `chmod 600 ~/.ssh/id_rsa`
+- **Auto-fix:** `chmod 600 "$KEY_PATH"`
+
 ---
 
 ## Cron (CHK-CRN)
